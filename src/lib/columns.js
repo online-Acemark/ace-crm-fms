@@ -26,6 +26,8 @@ export const COLUMNS = [
   { col_key: 'mobile_so_no',    label: 'Mobile SO No',  col_type: 'builtin' },
   { col_key: 'so_date',         label: 'Date',          col_type: 'builtin' },
   { col_key: 'account_name',    label: 'Client Name',   col_type: 'builtin' },
+  { col_key: 'salesman',        label: 'Salesman',      col_type: 'builtin' },
+  { col_key: 'beat',            label: 'Beat',          col_type: 'builtin' },
   { col_key: 'mobile_no',       label: 'Contact',       col_type: 'builtin' },
   { col_key: 'contact_person',  label: 'Person 1',      col_type: 'builtin' },
   { col_key: 'contact_person2', label: 'Person 2',      col_type: 'builtin' },

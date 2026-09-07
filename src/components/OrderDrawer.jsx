@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, buildStatusMsg, waLink } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, resolveContact, buildStatusMsg, waLink, noFollowup } from '../lib/fms'
 import { toLocalInput } from './Grid'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -128,6 +128,9 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
           </div>
           <div>
             <h3>💰 Payment Follow-up</h3>
+            {noFollowup(order) ? (
+              <p className="amber-t small">🚫 <b>Family N = No follow-up</b> — is account ka payment follow-up nahi karna hai.</p>
+            ) : (
             <div className="fup-form">
               <input placeholder="Remarks (call/WhatsApp note)" value={note} onChange={(e) => setNote(e.target.value)} />
               <input type="number" placeholder="Amount received ₹" value={amt} onChange={(e) => setAmt(e.target.value)} />
@@ -142,6 +145,7 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
               {fupErr && <span className="red-t small"><b>{fupErr}</b></span>}
               {isDemo && <p className="amber-t small">⚠ Demo mode chal raha hai — yahan save database me NAHI jata. Asli save ke liye Google sign-in karke use karo.</p>}
             </div>
+            )}
             <ul className="fup-list">
               {fups.map((f) => (
                 <li key={f.id}><b>{new Date(f.created_at).toLocaleDateString('en-IN')}</b> — {f.remarks || '—'}

@@ -62,6 +62,11 @@ export function buildStatusMsg(o, pipe) {
   return lines.join('\n')
 }
 
+// Family 'N' = No follow-up: is account ka payment follow-up nahi karna hai
+export function noFollowup(o) {
+  return String(o.acc_family || '').trim().toUpperCase() === 'N'
+}
+
 export function waLink(mobile, text) {
   const m = String(mobile || '').replace(/\D/g, '')
   if (!m) return null
@@ -85,9 +90,18 @@ export function aggregateSO(rows) {
       return vs.length ? vs.sort().at(-1) : null
     }
     const sum = (f) => lines.reduce((a, l) => a + (Number(l[f]) || 0), 0)
-    // distinct bills: amount + apna invoice PDF
+    // distinct bills: amount + apna invoice PDF + per-bill detail (bill-wise view ke liye)
     const billMap = new Map()
-    for (const l of lines) if (l.BillNo) billMap.set(l.BillNo, { amt: Number(l.BillNetAmount) || 0, url: l.InvUrl || billMap.get(l.BillNo)?.url || null })
+    for (const l of lines) {
+      if (!l.BillNo) continue
+      const b = billMap.get(l.BillNo) || { bill_no: l.BillNo, billing_date: null, amt: 0, qty: 0, url: null, products: [] }
+      b.amt = Number(l.BillNetAmount) || b.amt // BillNetAmount bill-level hota hai (har line pe repeat)
+      b.billing_date = [b.billing_date, l.BillingDate].filter(Boolean).sort().at(-1) || null
+      b.url = b.url || l.InvUrl || null
+      b.qty += Number(l.BillQty) || 0
+      b.products.push({ name: l.ProductName, code: l.ProductCode, qty: l.BillQty ?? l.SO_Qty, unit: l.ProdUnit })
+      billMap.set(l.BillNo, b)
+    }
     const [cp1, cp2] = splitTwo(first('ContactPerson'))
     const [em1, em2] = splitTwo(first('EmailID'))
     out.push({
@@ -116,6 +130,7 @@ export function aggregateSO(rows) {
       line_count: lines.length,
       bill_nos: [...billMap.keys()],
       inv_urls: [...billMap.values()].map((b) => b.url),
+      bills: [...billMap.values()].map(({ bill_no, billing_date, amt, qty, url, products }) => ({ bill_no, billing_date, amount: amt, qty, url, products })),
       products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit })),
     })
   }

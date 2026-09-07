@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
+import FollowupModal from './FollowupModal'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
 
@@ -50,26 +51,6 @@ export function toLocalInput(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-// Payment group ka Remark cell: last remark dikhta hai + naya remark yahin se add hota hai
-function RemarkCell({ order, lastRemark, onChanged }) {
-  const [v, setV] = useState('')
-  const save = async () => {
-    if (!v.trim()) return
-    const { data: { user } } = await supabase.auth.getUser()
-    await supabase.from('fms_followups').insert({
-      mobile_so_no: order.mobile_so_no, remarks: v.trim(), mode: 'call', created_by: user?.email || '',
-    })
-    setV('')
-    onChanged?.()
-  }
-  return <td className="sub fup-remark-cell stage_payment">
-    {lastRemark && <div className="last-remark" title={lastRemark}>{lastRemark}</div>}
-    <input className="fill-inp remark-inp" placeholder="+ naya remark, Enter dabao" value={v}
-      onChange={(e) => setV(e.target.value)} onBlur={save}
-      onKeyDown={(e) => e.key === 'Enter' && e.target.blur()} />
-  </td>
-}
-
 // blank ho to inline input dikhao (exec bhar sake), value ho to text — sab contact_manual me save hota hai
 function ContactCell({ order, field, placeholder, isEmail, onChanged }) {
   const c = resolveContact(order)
@@ -93,18 +74,61 @@ function ContactCell({ order, field, placeholder, isEmail, onChanged }) {
   </td>
 }
 
-export default function Grid({ orders, stages, columns, scoring, fupCounts, onChanged }) {
+export default function Grid({ orders, stages, columns, scoring, fupCounts, partyInfo, onChanged }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('all')
   const [open, setOpen] = useState(null)
+  const [fupOrder, setFupOrder] = useState(null)
+  const [fBeat, setFBeat] = useState('')
+  const [fSalesman, setFSalesman] = useState('')
+  const [fParty, setFParty] = useState('')
+  const [view, setView] = useState('so') // 'so' = ek row per SO, 'bill' = ek row per bill
 
   const rows = useMemo(() => orders.map((o) => {
     const pipe = computePipeline(o, stages, scoring)
     return { o, pipe, score: computeScore(pipe, scoring) }
   }), [orders, stages, scoring])
 
-  const filtered = rows.filter(({ o, pipe }) => {
+  // bill-wise: har bill ki alag row (us bill ki date/amount/items ke saath); bina bill wale SO waise hi dikhte hain
+  const viewRows = useMemo(() => {
+    if (view === 'so') return rows
+    const out = []
+    for (const { o } of orders.map((o) => ({ o }))) {
+      // purane synced rows me bills nahi hota — bill_nos se bana lo
+      const bills = (o.bills?.length ? o.bills : (o.bill_nos || []).map((bn, i) => ({
+        bill_no: bn, billing_date: o.billing_date, amount: (o.bill_nos || []).length === 1 ? o.bill_net_amount : null,
+        qty: null, url: (o.inv_urls || [])[i] || null, products: null,
+      })))
+      if (!bills.length) {
+        const pipe = computePipeline(o, stages, scoring)
+        out.push({ o: { ...o, _billKey: o.mobile_so_no + '_nobill' }, pipe, score: computeScore(pipe, scoring) })
+        continue
+      }
+      for (const b of bills) {
+        const bo = {
+          ...o, _billKey: o.mobile_so_no + '_' + b.bill_no,
+          billing_date: b.billing_date || o.billing_date, bill_net_amount: b.amount,
+          bill_nos: [b.bill_no], inv_urls: [b.url], bill_qty: b.qty,
+          products: b.products || o.products, line_count: (b.products || o.products || []).length,
+        }
+        const pipe = computePipeline(bo, stages, scoring)
+        out.push({ o: bo, pipe, score: computeScore(pipe, scoring) })
+      }
+    }
+    return out
+  }, [rows, orders, view, stages, scoring])
+
+  // filter dropdowns ke options — jo values bhari gayi hain unse
+  const beatOpts = useMemo(() => [...new Set(orders.map((o) => partyInfo?.[o.account_name]?.beat).filter(Boolean))].sort(), [orders, partyInfo])
+  const salesmanOpts = useMemo(() => [...new Set(orders.map((o) => partyInfo?.[o.account_name]?.salesman).filter(Boolean))].sort(), [orders, partyInfo])
+  const partyOpts = useMemo(() => [...new Set(orders.map((o) => o.account_name).filter(Boolean))].sort(), [orders])
+
+  const filtered = viewRows.filter(({ o, pipe }) => {
     if (q && !(`${o.account_name} ${o.mobile_so_no} ${o.mobile_no}`.toLowerCase().includes(q.toLowerCase()))) return false
+    const pi = partyInfo?.[o.account_name] || {}
+    if (fBeat && pi.beat !== fBeat) return false
+    if (fSalesman && pi.salesman !== fSalesman) return false
+    if (fParty && o.account_name !== fParty) return false
     if (filter === 'delayed') return Object.values(pipe).some((p) => p.status === 'late' || p.status === 'running')
     if (filter === 'payment') return pipe.payment && ['running', 'pending', 'late'].includes(pipe.payment.status) && !o.payment_complete
     if (filter === 'pending') return Number(o.pending_qty) > 0
@@ -134,6 +158,10 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, onCh
         <div className="kpi red"><b>{kpi.delayed}</b><span>Delayed</span></div>
         <div className="kpi amber"><b>{kpi.payDue}</b><span>Payment Overdue</span></div>
         <div className="kpi green"><b>{kpi.avg}</b><span>Avg Score</span></div>
+        <select value={view} onChange={(e) => setView(e.target.value)} title="Row kis hisaab se dikhe">
+          <option value="so">📄 SO-wise</option>
+          <option value="bill">🧾 Bill-wise</option>
+        </select>
         <input className="search" placeholder="🔍 Client / SO No…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="all">All orders</option>
@@ -142,6 +170,19 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, onCh
           <option value="pending">📦 Pending qty</option>
           <option value="contact">📇 Contact info missing</option>
         </select>
+        <select value={fSalesman} onChange={(e) => setFSalesman(e.target.value)} title="Salesman-wise filter">
+          <option value="">👤 All salesmen</option>
+          {salesmanOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={fBeat} onChange={(e) => setFBeat(e.target.value)} title="Beat-wise filter">
+          <option value="">🗺 All beats</option>
+          {beatOpts.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+        <select value={fParty} onChange={(e) => setFParty(e.target.value)} title="Party-wise filter">
+          <option value="">🏪 All parties</option>
+          {partyOpts.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        {(fBeat || fSalesman || fParty) && <button className="btn ghost sm" onClick={() => { setFBeat(''); setFSalesman(''); setFParty('') }}>✕ Clear</button>}
       </div>
       <div className="legend">
         <span><i className="dot g"></i> On-time ✔</span>
@@ -175,7 +216,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, onCh
           </thead>
           <tbody>
             {filtered.map(({ o, pipe, score }) => (
-              <tr key={o.mobile_so_no}>
+              <tr key={o._billKey || o.mobile_so_no}>
                 {visCols.map((c) => {
                   if (c.col_type === 'stage') {
                     const cell = <StageCell key={c.col_key} p={pipe[stageMap[c.col_key]?.stage_key]} sk={c.col_key} />
@@ -190,17 +231,20 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, onCh
                       </td>]
                     if (c.col_key === 'stage_payment') {
                       const f = fupCounts?.[o.mobile_so_no]
+                      if (noFollowup(o)) {
+                        return [cell,
+                          <td key={c.col_key + '_nf'} className={`sub ${c.col_key} no-fup`} colSpan={3} title="Family N = No follow-up — is account ka payment follow-up nahi karna hai">🚫 No F/Up (Family N)</td>]
+                      }
                       return [cell,
-                        <td key={c.col_key + '_n'} className={`sub ${c.col_key}`}><span className={f?.count ? 'fup-badge' : 'muted'}>{f?.count || '—'}</span></td>,
-                        <td key={c.col_key + '_x'} className={`sub cust ${c.col_key}`}>
-                          <input type="datetime-local" value={toLocalInput(o.next_followup_date)}
-                            onChange={async (e) => {
-                              const v = e.target.value ? new Date(e.target.value).toISOString() : null
-                              await supabase.from('fms_orders').update({ next_followup_date: v }).eq('mobile_so_no', o.mobile_so_no)
-                              onChanged?.()
-                            }} />
+                        <td key={c.col_key + '_n'} className={`sub ${c.col_key}`}>
+                          <button className="fup-cell-btn" title="Follow-up modal kholo — date + remark dalo, log dekho" onClick={() => setFupOrder(o)}>
+                            📝 <span className={f?.count ? 'fup-badge' : 'muted'}>{f?.count || 0}</span>
+                          </button>
                         </td>,
-                        <RemarkCell key={c.col_key + '_r'} order={o} lastRemark={f?.lastRemark} onChanged={onChanged} />]
+                        <td key={c.col_key + '_x'} className={`sub ${c.col_key}`}>{o.next_followup_date ? fmtDT(o.next_followup_date) : <span className="muted">—</span>}</td>,
+                        <td key={c.col_key + '_r'} className={`sub fup-remark-cell ${c.col_key}`}>
+                          {f?.lastRemark ? <div className="last-remark" title={f.lastRemark}>{f.lastRemark}</div> : <span className="muted">—</span>}
+                        </td>]
                     }
                     return cell
                   }
@@ -209,6 +253,8 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, onCh
                     case 'mobile_so_no': return <td key={c.col_key}><button className="link" onClick={() => setOpen(o)}>{o.mobile_so_no}</button></td>
                     case 'so_date': return <td key={c.col_key} className="so-date">{fmtDT(o.mobile_so_created)}</td>
                     case 'account_name': return <td key={c.col_key} className="acct">{o.account_name}</td>
+                    case 'salesman': return <td key={c.col_key}>{partyInfo?.[o.account_name]?.salesman || <span className="muted">—</span>}</td>
+                    case 'beat': return <td key={c.col_key}>{partyInfo?.[o.account_name]?.beat || <span className="muted">—</span>}</td>
                     case 'mobile_no': return <td key={c.col_key}>{o.mobile_no ? <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">{o.mobile_no}</a> : '—'}</td>
                     case 'contact_person': return <ContactCell key={c.col_key} order={o} field="contact_person" placeholder="+ naam bharo" onChanged={onChanged} />
                     case 'contact_person2': return <ContactCell key={c.col_key} order={o} field="contact_person2" placeholder="+ person 2" onChanged={onChanged} />
@@ -233,6 +279,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, onCh
         </table>
       </div>
       {open && <OrderDrawer order={open} stages={stages} scoring={scoring} onClose={() => setOpen(null)} onChanged={onChanged} />}
+      {fupOrder && <FollowupModal order={fupOrder} onClose={() => setFupOrder(null)} onChanged={onChanged} />}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -39,7 +39,8 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
       else if (!o.billing_date && (pipe.billing?.status === 'running')) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
       if (o.billing_date && !o.desp_date && ['running', 'pending'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
       const fupDue = o.next_followup_date && new Date(o.next_followup_date) <= new Date()
-      if (!o.payment_complete && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
+      // Family N = No follow-up — payment list me mat dikhao
+      if (!o.payment_complete && !noFollowup(o) && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
       if (contactMissing(o) && !o.payment_complete) t.contact.push({ o, pipe })
     }
     for (const k of Object.keys(t)) t[k].sort((a, b) => (b.d || 0) - (a.d || 0))

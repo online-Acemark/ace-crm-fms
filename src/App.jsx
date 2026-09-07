@@ -40,6 +40,7 @@ export default function App() {
   const [stages, setStages] = useState([])
   const [scoring, setScoring] = useState(null)
   const [fupCounts, setFupCounts] = useState({})
+  const [partyInfo, setPartyInfo] = useState({}) // account_name -> { salesman, beat }
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('fms_theme') || 'light')
@@ -73,11 +74,12 @@ export default function App() {
       setScoring({ on_time_points: 100, grace_hours: 1, penalty_per_hour: 2, min_points: 0 })
       return
     }
-    const [o, s, set, f] = await Promise.all([
+    const [o, s, set, f, pi] = await Promise.all([
       supabase.from('fms_orders').select('*').order('mobile_so_created', { ascending: false }),
       supabase.from('fms_stage_config').select('*').order('sort_order'),
       supabase.from('fms_settings').select('*').eq('key', 'scoring').maybeSingle(),
       supabase.from('fms_followups').select('mobile_so_no,remarks,created_at').order('created_at', { ascending: true }),
+      supabase.from('fms_party_info').select('*'),
     ])
     setOrders(o.data || [])
     setStages(s.data || [])
@@ -90,7 +92,9 @@ export default function App() {
       fc[r.mobile_so_no] = e
     }
     setFupCounts(fc)
+    setPartyInfo(Object.fromEntries((pi.data || []).map((r) => [r.account_name, { salesman: r.salesman || '', beat: r.beat || '' }])))
   }, [])
+
 
   useEffect(() => { if (session) loadAll() }, [session, loadAll])
 
@@ -129,7 +133,7 @@ export default function App() {
       {msg && <div className="toast">{msg}</div>}
       <main>
         {tab === 'action' && <ActionCenter orders={orders} stages={stages} scoring={scoring} onChanged={loadAll} />}
-        {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} onChanged={loadAll} />}
+        {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} partyInfo={partyInfo} onChanged={loadAll} />}
         {tab === 'score' && <Scoreboard orders={orders} stages={stages} scoring={scoring} />}
         {tab === 'stages' && <StageConfig stages={stages} scoring={scoring} onChanged={loadAll} />}
       </main>
