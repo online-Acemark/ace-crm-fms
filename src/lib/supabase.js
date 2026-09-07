@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 
-export const SUPABASE_URL = 'https://dgsuenfqujouikjefymm.supabase.co'
-export const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRnc3VlbmZxdWpvdWlramVmeW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyODIxNzQsImV4cCI6MjA4NTg1ODE3NH0.WE6CZBqSkZB5m5iE0iFsiru2FSJ70O1ZJBc_xNL9FYM'
+// values .env file se aati hain (VITE_ prefix zaroori hai) — .env git me commit NAHI hota
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+export const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+if (!SUPABASE_URL || !SUPABASE_ANON) {
+  throw new Error('.env file me VITE_SUPABASE_URL aur VITE_SUPABASE_ANON_KEY set karo (.env.example dekho)')
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON)
