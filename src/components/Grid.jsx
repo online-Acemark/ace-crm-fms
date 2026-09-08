@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, fetchERP } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, getStockMap } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
-
-// ERP stock ek hi baar fetch hota hai (11k+ products) — tab switch par dobara nahi
-let stockCache = null
 
 function StageCell({ p, sk }) {
   if (!p) return <td className={`stage-cell na ${sk} stg-first`} colSpan={3}>—</td>
@@ -86,20 +83,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
   const [fSalesman, setFSalesman] = useState('')
   const [fParty, setFParty] = useState('')
   const [view, setView] = useState('so') // 'so' = ek row per SO, 'bill' = ek row per bill, 'item' = ek row per product line
-  const [stockMap, setStockMap] = useState(stockCache)
-
-  useEffect(() => {
-    if (stockCache) return
-    let alive = true
-    fetchERP('stock').then((raw) => {
-      const srows = Array.isArray(raw) ? raw : raw?.DataRec || []
-      const m = {}
-      for (const r of srows) if (r.ProductCode) m[String(r.ProductCode).trim().toLowerCase()] = { total: Number(r.Total) || 0, unit: r.ProdUnit || '', status: r.StockStatus || '' }
-      stockCache = m
-      if (alive) setStockMap(m)
-    }).catch(() => { if (alive) setStockMap({}) })
-    return () => { alive = false }
-  }, [])
+  const stockMap = getStockMap() // App.loadAll pehle hi load kar chuka hota hai
 
   const rows = useMemo(() => orders.map((o) => {
     const pipe = computePipeline(o, stages, scoring)
@@ -150,16 +134,19 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
     return out
   }, [rows, orders, view, stages, scoring])
 
+  // salesman/beat: ERP (MobileSO API) primary source, fms_party_info manual fallback
+  const smOf = (o) => o.salesman || partyInfo?.[o.account_name]?.salesman || ''
+  const beatOf = (o) => o.beat || partyInfo?.[o.account_name]?.beat || ''
+
   // filter dropdowns ke options — jo values bhari gayi hain unse
-  const beatOpts = useMemo(() => [...new Set(orders.map((o) => partyInfo?.[o.account_name]?.beat).filter(Boolean))].sort(), [orders, partyInfo])
-  const salesmanOpts = useMemo(() => [...new Set(orders.map((o) => partyInfo?.[o.account_name]?.salesman).filter(Boolean))].sort(), [orders, partyInfo])
+  const beatOpts = useMemo(() => [...new Set(orders.map(beatOf).filter(Boolean))].sort(), [orders, partyInfo])
+  const salesmanOpts = useMemo(() => [...new Set(orders.map(smOf).filter(Boolean))].sort(), [orders, partyInfo])
   const partyOpts = useMemo(() => [...new Set(orders.map((o) => o.account_name).filter(Boolean))].sort(), [orders])
 
   const filtered = viewRows.filter(({ o, pipe }) => {
     if (q && !(`${o.account_name} ${o.mobile_so_no} ${o.mobile_no} ${(o.products || []).map((p) => p.name + ' ' + p.code).join(' ')}`.toLowerCase().includes(q.toLowerCase()))) return false
-    const pi = partyInfo?.[o.account_name] || {}
-    if (fBeat && pi.beat !== fBeat) return false
-    if (fSalesman && pi.salesman !== fSalesman) return false
+    if (fBeat && beatOf(o) !== fBeat) return false
+    if (fSalesman && smOf(o) !== fSalesman) return false
     if (fParty && o.account_name !== fParty) return false
     if (filter === 'delayed') return Object.values(pipe).some((p) => p.status === 'late' || p.status === 'running')
     if (filter === 'payment') return pipe.payment && ['running', 'pending', 'late'].includes(pipe.payment.status) && !o.payment_complete
@@ -230,7 +217,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
           <thead>
             <tr>
               {visCols.map((c) => c.col_type === 'stage'
-                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 4 : c.col_key === 'stage_payment' ? 6 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
+                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 6 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
                 : <th key={c.col_key} rowSpan={2} className={c.is_custom ? 'cust-h' : ''}>{c.label}{c.is_custom ? ' ✏️' : ''}</th>)}
             </tr>
             <tr>
@@ -238,7 +225,10 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                 <th key={c.col_key + 'p'} className={`sub-h ${c.col_key} stg-first`}>Pln</th>,
                 <th key={c.col_key + 'a'} className={`sub-h ${c.col_key}`}>Act</th>,
                 <th key={c.col_key + 'd'} className={`sub-h ${c.col_key}`}>Delay</th>,
-                ...(c.col_key === 'stage_billing' ? [<th key={c.col_key + 'i'} className={`sub-h ${c.col_key}`}>Inv No</th>] : []),
+                ...(c.col_key === 'stage_billing' ? [
+                  <th key={c.col_key + 'q'} className={`sub-h ${c.col_key}`}>Billed Qty</th>,
+                  <th key={c.col_key + 'i'} className={`sub-h ${c.col_key}`}>Inv No</th>,
+                ] : []),
                 ...(c.col_key === 'stage_payment' ? [
                   <th key={c.col_key + 'n'} className={`sub-h ${c.col_key}`}>F/Ups</th>,
                   <th key={c.col_key + 'x'} className={`sub-h ${c.col_key}`}>Next F/Up</th>,
@@ -254,6 +244,9 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                   if (c.col_type === 'stage') {
                     const cell = <StageCell key={c.col_key} p={pipe[stageMap[c.col_key]?.stage_key]} sk={c.col_key} />
                     if (c.col_key === 'stage_billing') return [cell,
+                      <td key={c.col_key + '_bq'} className={`sub num ${c.col_key}`}>
+                        {(() => { const ps = o.products || []; const v = ps.length === 1 && ps[0].bqty != null ? ps[0].bqty : o.bill_qty; return v != null ? Number(v).toLocaleString('en-IN') : '—' })()}
+                      </td>,
                       <td key={c.col_key + '_inv'} className={`sub inv-col ${c.col_key}`}>
                         {(o.bill_nos || []).length ? (o.bill_nos || []).map((b, i) => {
                           const u = (o.inv_urls || [])[i]
@@ -286,12 +279,12 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                     case 'mobile_so_no': return <td key={c.col_key}><button className="link" onClick={() => setOpen(o)}>{o.mobile_so_no}</button></td>
                     case 'so_date': return <td key={c.col_key} className="so-date">{fmtDT(o.mobile_so_created)}</td>
                     case 'account_name': return <td key={c.col_key} className="acct">{o.account_name}</td>
-                    case 'salesman': return <td key={c.col_key}>{partyInfo?.[o.account_name]?.salesman || <span className="muted">—</span>}</td>
-                    case 'beat': return <td key={c.col_key}>{partyInfo?.[o.account_name]?.beat || <span className="muted">—</span>}</td>
+                    case 'salesman': return <td key={c.col_key}>{smOf(o) || <span className="muted">—</span>}</td>
+                    case 'beat': return <td key={c.col_key}>{beatOf(o) || <span className="muted">—</span>}</td>
                     case 'mobile_no': return <td key={c.col_key}>{o.mobile_no ? <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">{o.mobile_no}</a> : '—'}</td>
                     case 'contact_person': return <ContactCell key={c.col_key} order={o} field="contact_person" placeholder="+ naam bharo" onChanged={onChanged} />
-                    case 'contact_person2': return <ContactCell key={c.col_key} order={o} field="contact_person2" placeholder="+ person 2" onChanged={onChanged} />
                     case 'email_id': return <ContactCell key={c.col_key} order={o} field="email_id" placeholder="+ email bharo" isEmail onChanged={onChanged} />
+                    case 'contact_person2': return <ContactCell key={c.col_key} order={o} field="contact_person2" placeholder="+ person 2" onChanged={onChanged} />
                     case 'email_id2': return <ContactCell key={c.col_key} order={o} field="email_id2" placeholder="+ email 2" isEmail onChanged={onChanged} />
                     case 'client_update': {
                       const link = waLink(o.mobile_no, buildStatusMsg(o, pipe))
@@ -300,8 +293,23 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                     case 'acc_family': return <td key={c.col_key}>{o.acc_family || '—'}</td>
                     case 'item': {
                       const ps = o.products || []
-                      if (ps.length === 1) return <td key={c.col_key} className="item-cell" title={`${ps[0].name} (${ps[0].code || ''})`}>{ps[0].name}{ps[0].qty != null ? ` · ${ps[0].qty} ${ps[0].unit || ''}` : ''}</td>
+                      if (ps.length === 1) return <td key={c.col_key} className="item-cell" title={`${ps[0].name} (${ps[0].code || ''})`}>{ps[0].name}</td>
                       return <td key={c.col_key} className="item-cell muted">{ps.length ? ps.length + ' items' : '—'}</td>
+                    }
+                    case 'so_qty': {
+                      const ps = o.products || []
+                      const v = ps.length === 1 ? ps[0].qty : o.so_qty
+                      return <td key={c.col_key} className="num">{v != null ? Number(v).toLocaleString('en-IN') : '—'}</td>
+                    }
+                    case 'unit': {
+                      const ps = o.products || []
+                      return <td key={c.col_key}>{ps.length === 1 ? (ps[0].unit || '—') : <span className="muted">—</span>}</td>
+                    }
+                    case 'mobile_qty': {
+                      const ps = o.products || []
+                      // item view: us line ki mobile qty; SO/bill view: pure order ka total
+                      if (ps.length === 1 && ps[0].mqty != null) return <td key={c.col_key} className="num">{Number(ps[0].mqty).toLocaleString('en-IN')} {ps[0].munit || ''}</td>
+                      return <td key={c.col_key} className="num">{o.mobile_qty != null ? Number(o.mobile_qty).toLocaleString('en-IN') : '—'}</td>
                     }
                     case 'stock': {
                       const ps = o.products || []

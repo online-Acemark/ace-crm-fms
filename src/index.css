@@ -199,8 +199,8 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .stock-cell { font-size: 12px; white-space: nowrap; }
 .stock-neg { color: var(--red); font-weight: 700; }
 
-/* item column */
-.item-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+/* item column — pura naam dikhe, wrap hoke */
+.item-cell { min-width: 160px; max-width: 240px; white-space: normal; word-break: break-word; font-size: 12px; line-height: 1.35; }
 
 /* family N = no follow-up */
 .no-fup { color: var(--muted); font-size: 11.5px; text-align: center; opacity: .75; }

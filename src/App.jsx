@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
-import { syncOrders } from './lib/fms'
+import { syncOrders, loadWorkingDays, loadStock } from './lib/fms'
 import Grid from './components/Grid'
 import ActionCenter from './components/ActionCenter'
 import Scoreboard from './components/Scoreboard'
@@ -60,6 +60,7 @@ export default function App() {
   }, [])
 
   const loadAll = useCallback(async () => {
+    await Promise.all([loadWorkingDays(), loadStock()]) // planned rules: working day calendar + stock availability
     if (demo) {
       const { aggregateSO } = await import('./lib/fms')
       const raw = await fetch('/demo-so.json').then((r) => r.json())

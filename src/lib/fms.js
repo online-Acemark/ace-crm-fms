@@ -114,6 +114,8 @@ export function aggregateSO(rows) {
       email_id: em1,
       email_id2: em2,
       acc_family: (first('AccFamily') || '').trim(),
+      salesman: (first('SalesMan_Cloud') || '').trim(),
+      beat: (first('Beat') || '').trim(),
       mobile_so_created: first('MobileAppSoCreated') ?? null,
       so_convert_date: first('SoConvertDate') ?? null,
       billing_date: allHave('BillNo') ? maxDate('BillingDate') : null,
@@ -125,16 +127,99 @@ export function aggregateSO(rows) {
       sorder_amount: first('SorderAmount') ?? null,
       bill_net_amount: [...billMap.values()].reduce((a, b) => a + b.amt, 0) || null,
       so_qty: sum('SO_Qty') || null,
+      mobile_qty: sum('MobileApp_Qty') || null,
       pending_qty: sum('PendingQty'),
       bill_qty: sum('BillQty') || null,
       line_count: lines.length,
       bill_nos: [...billMap.keys()],
       inv_urls: [...billMap.values()].map((b) => b.url),
       bills: [...billMap.values()].map(({ bill_no, billing_date, amt, qty, url, products }) => ({ bill_no, billing_date, amount: amt, qty, url, products })),
-      products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit })),
+      products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit, mqty: l.MobileApp_Qty, munit: l.MasterUnit, bqty: l.BillQty })),
     })
   }
   return out
+}
+
+// ---------- working day calendar (Supabase: working_day_calender + holidays) ----------
+let workingDaySet = null // Set of 'YYYY-MM-DD' — Sunday/holiday pehle se excluded hain
+export async function loadWorkingDays() {
+  if (workingDaySet) return
+  try {
+    const [wd, hd] = await Promise.all([
+      supabase.from('working_day_calender').select('working_date'),
+      supabase.from('holidays').select('holiday_date'),
+    ])
+    if (wd.data?.length) {
+      const hset = new Set((hd.data || []).map((r) => r.holiday_date))
+      workingDaySet = new Set(wd.data.map((r) => r.working_date).filter((dt) => !hset.has(dt)))
+    }
+  } catch { /* fallback niche: sirf Sunday skip */ }
+}
+
+const ymd = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+const isWorkingDay = (dt) => workingDaySet ? workingDaySet.has(ymd(dt)) : dt.getDay() !== 0
+
+const nextWorkingDay = (from) => {
+  let day = new Date(from); day.setHours(0, 0, 0, 0)
+  for (let i = 0; i < 60; i++) {
+    day = new Date(day.getTime() + 864e5)
+    if (isWorkingDay(day)) break
+  }
+  return day
+}
+
+// ---------- ERP stock (ProductStock API) — billing rule + Stock column dono ke liye ----------
+let stockMap = null // code -> { total, unit, status }
+export async function loadStock() {
+  if (stockMap) return
+  try {
+    const raw = await fetchERP('stock')
+    const rows = Array.isArray(raw) ? raw : raw?.DataRec || []
+    const m = {}
+    for (const r of rows) if (r.ProductCode) m[String(r.ProductCode).trim().toLowerCase()] = { total: Number(r.Total) || 0, unit: r.ProdUnit || '', status: r.StockStatus || '' }
+    stockMap = m
+  } catch { /* stock na mile to billing purane chain rule par chalta hai */ }
+}
+export const getStockMap = () => stockMap
+
+// order ke SAARE items ki qty stock me hai? true/false; stock data hi nahi to null
+function stockAvailableFor(o) {
+  if (!stockMap) return null
+  const ps = o.products || []
+  if (!ps.length) return null
+  for (const p of ps) {
+    const s = stockMap[String(p.code || '').trim().toLowerCase()]
+    if (s == null || s.total < (Number(p.qty) || 0)) return false
+  }
+  return true
+}
+
+// Billing rule: stock available + confirm 4 PM se pehle → usi din 4 PM; warna agle working day 4 PM
+const BILL_CUTOFF = [16, 0]
+function billingPlanned(base, o) {
+  if (!base) return null
+  const avail = stockAvailableFor(o)
+  if (avail == null) return null // stock data nahi — caller purana rule lagayega
+  const cut = new Date(base); cut.setHours(BILL_CUTOFF[0], BILL_CUTOFF[1], 0, 0)
+  let day
+  if (avail && isWorkingDay(base) && base <= cut) day = new Date(base)
+  else day = nextWorkingDay(base)
+  day.setHours(BILL_CUTOFF[0], BILL_CUTOFF[1], 0, 0)
+  return day
+}
+
+// SO Convert rule: working day par 7:30 PM se pehle aaya → +30 min;
+// warna (late/Sunday/holiday) → agle working day 10:30 AM + 30 min = 11:00 AM
+const SO_CUTOFF = [19, 30]
+const NEXT_DAY_START = [10, 30]
+function soConvertPlanned(t, plannedHours) {
+  if (!t) return null
+  const addMs = (plannedHours != null ? Number(plannedHours) : 0.5) * 3600 * 1000
+  const cutoff = new Date(t); cutoff.setHours(SO_CUTOFF[0], SO_CUTOFF[1], 0, 0)
+  if (isWorkingDay(t) && t <= cutoff) return new Date(t.getTime() + addMs)
+  const day = nextWorkingDay(t)
+  day.setHours(NEXT_DAY_START[0], NEXT_DAY_START[1], 0, 0)
+  return new Date(day.getTime() + addMs)
 }
 
 // ---------- pipeline: planned / actual / delay per stage ----------
@@ -154,7 +239,13 @@ export function computePipeline(o, stages, scoring) {
   const now = new Date()
   for (const st of stages.filter((s) => s.active)) {
     let planned = null
-    if (st.stage_key === 'payment') {
+    if (st.stage_key === 'so_convert') {
+      planned = soConvertPlanned(d(o.mobile_so_created), st.planned_hours)
+    } else if (st.stage_key === 'billing') {
+      planned = billingPlanned(prevRef, o)
+      // stock data na ho to purana chain rule: confirm + planned_hours
+      if (!planned && st.planned_hours != null && prevRef) planned = new Date(prevRef.getTime() + Number(st.planned_hours) * H)
+    } else if (st.stage_key === 'payment') {
       const bill = d(o.billing_date)
       if (bill && o.credit_days != null) planned = new Date(bill.getTime() + o.credit_days * 24 * H)
     } else if (st.use_cutoff) {
@@ -224,6 +315,7 @@ export function fmtDT(v) {
 
 // ---------- sync into supabase ----------
 export async function syncOrders(stages, scoring, onMsg) {
+  await Promise.all([loadWorkingDays(), loadStock()])
   onMsg?.('ERP se orders fetch ho rahe hain…')
   const raw = await fetchERP('so')
   onMsg?.(`${raw.length} lines mile — aggregate ho raha hai…`)
