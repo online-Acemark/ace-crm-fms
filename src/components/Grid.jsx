@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, getStockMap } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -248,12 +248,21 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                         {(() => { const ps = o.products || []; const v = ps.length === 1 && ps[0].bqty != null ? ps[0].bqty : o.bill_qty; return v != null ? Number(v).toLocaleString('en-IN') : '—' })()}
                       </td>,
                       <td key={c.col_key + '_inv'} className={`sub inv-col ${c.col_key}`}>
-                        {(o.bill_nos || []).length ? (o.bill_nos || []).map((b, i) => {
-                          const u = (o.inv_urls || [])[i]
-                          return u
-                            ? <a key={b} className="link" href={u} target="_blank" rel="noreferrer" title="Invoice PDF kholo">#{b}</a>
-                            : <span key={b}>#{b}</span>
-                        }) : <span className="muted">—</span>}
+                        {(() => {
+                          const bills = o.bills?.length ? o.bills : (o.bill_nos || []).map((bn, i) => ({
+                            bill_no: bn, url: (o.inv_urls || [])[i] || null, billing_date: o.billing_date,
+                            amount: (o.bill_nos || []).length === 1 ? o.bill_net_amount : null, qty: null,
+                          }))
+                          if (!bills.length) return <span className="muted">—</span>
+                          return bills.map((b) => (
+                            <span key={b.bill_no} className="inv-item">
+                              {b.url
+                                ? <a className="link" href={b.url} target="_blank" rel="noreferrer" title="Invoice PDF kholo">#{b.bill_no}</a>
+                                : <span>#{b.bill_no}</span>}
+                              {o.mobile_no && <a className="wa-mini" href={waLink(o.mobile_no, buildBillMsg(o, b))} target="_blank" rel="noreferrer" title="Is bill ka WhatsApp message bhejo">📤</a>}
+                            </span>
+                          ))
+                        })()}
                       </td>]
                     if (c.col_key === 'stage_payment') {
                       const f = fupCounts?.[o.mobile_so_no]
@@ -310,6 +319,11 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       // item view: us line ki mobile qty; SO/bill view: pure order ka total
                       if (ps.length === 1 && ps[0].mqty != null) return <td key={c.col_key} className="num">{Number(ps[0].mqty).toLocaleString('en-IN')} {ps[0].munit || ''}</td>
                       return <td key={c.col_key} className="num">{o.mobile_qty != null ? Number(o.mobile_qty).toLocaleString('en-IN') : '—'}</td>
+                    }
+                    case 'bill_date': return <td key={c.col_key} className="small">{o.billing_date ? fmtDT(o.billing_date) : <span className="muted">—</span>}</td>
+                    case 'credit_date': {
+                      const due = paymentDue(o.billing_date, o.credit_days)
+                      return <td key={c.col_key} className="small">{due ? <>{fmtDT(due)}{o.credit_days != null && <span className="muted"> ({o.credit_days}d)</span>}</> : <span className="muted">—</span>}</td>
                     }
                     case 'stock': {
                       const ps = o.products || []

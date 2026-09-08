@@ -67,6 +67,21 @@ export function noFollowup(o) {
   return String(o.acc_family || '').trim().toUpperCase() === 'N'
 }
 
+// bill-wise WhatsApp message: party naam, bill no, amount, qty, due date, invoice PDF
+export function buildBillMsg(o, b) {
+  const lines = [`Namaste ${o.account_name} 🙏`, '', 'Aapka bill ban gaya hai:']
+  lines.push(`🧾 Bill No: ${b.bill_no}${b.billing_date ? ` (${new Date(b.billing_date).toLocaleDateString('en-IN')})` : ''}`)
+  if (b.amount != null) lines.push(`💰 Amount: ₹${Number(b.amount).toLocaleString('en-IN')}`)
+  if (b.qty) lines.push(`📦 Qty: ${Number(b.qty).toLocaleString('en-IN')}`)
+  if (o.credit_days != null && b.billing_date) {
+    const due = new Date(new Date(b.billing_date).getTime() + o.credit_days * 864e5)
+    lines.push(`📅 Payment due: ${due.toLocaleDateString('en-IN')} (credit ${o.credit_days} din)`)
+  }
+  if (b.url) lines.push(`📄 Invoice: ${b.url}`)
+  lines.push('', 'Koi bhi jankari ke liye humein batayein. Dhanyavaad!', '— Acemark Stationers')
+  return lines.join('\n')
+}
+
 export function waLink(mobile, text) {
   const m = String(mobile || '').replace(/\D/g, '')
   if (!m) return null
@@ -222,6 +237,18 @@ function soConvertPlanned(t, plannedHours) {
   return new Date(day.getTime() + addMs)
 }
 
+// Payment due: bill date + credit days; due din Sunday/holiday ho to agla working day
+export function paymentDue(billDate, creditDays) {
+  if (!billDate || creditDays == null) return null
+  let due = new Date(new Date(billDate).getTime() + creditDays * 24 * 3600 * 1000)
+  if (!isWorkingDay(due)) {
+    const day = nextWorkingDay(due)
+    day.setHours(due.getHours(), due.getMinutes(), 0, 0)
+    due = day
+  }
+  return due
+}
+
 // ---------- pipeline: planned / actual / delay per stage ----------
 const H = 3600 * 1000
 const d = (v) => (v ? new Date(v) : null)
@@ -246,8 +273,7 @@ export function computePipeline(o, stages, scoring) {
       // stock data na ho to purana chain rule: confirm + planned_hours
       if (!planned && st.planned_hours != null && prevRef) planned = new Date(prevRef.getTime() + Number(st.planned_hours) * H)
     } else if (st.stage_key === 'payment') {
-      const bill = d(o.billing_date)
-      if (bill && o.credit_days != null) planned = new Date(bill.getTime() + o.credit_days * 24 * H)
+      planned = paymentDue(o.billing_date, o.credit_days)
     } else if (st.use_cutoff) {
       const base = d(o.mobile_so_created)
       if (base) {
