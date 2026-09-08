@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, fetchERP } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
+
+// ERP stock ek hi baar fetch hota hai (11k+ products) — tab switch par dobara nahi
+let stockCache = null
 
 function StageCell({ p, sk }) {
   if (!p) return <td className={`stage-cell na ${sk} stg-first`} colSpan={3}>—</td>
@@ -82,16 +85,45 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
   const [fBeat, setFBeat] = useState('')
   const [fSalesman, setFSalesman] = useState('')
   const [fParty, setFParty] = useState('')
-  const [view, setView] = useState('so') // 'so' = ek row per SO, 'bill' = ek row per bill
+  const [view, setView] = useState('so') // 'so' = ek row per SO, 'bill' = ek row per bill, 'item' = ek row per product line
+  const [stockMap, setStockMap] = useState(stockCache)
+
+  useEffect(() => {
+    if (stockCache) return
+    let alive = true
+    fetchERP('stock').then((raw) => {
+      const srows = Array.isArray(raw) ? raw : raw?.DataRec || []
+      const m = {}
+      for (const r of srows) if (r.ProductCode) m[String(r.ProductCode).trim().toLowerCase()] = { total: Number(r.Total) || 0, unit: r.ProdUnit || '', status: r.StockStatus || '' }
+      stockCache = m
+      if (alive) setStockMap(m)
+    }).catch(() => { if (alive) setStockMap({}) })
+    return () => { alive = false }
+  }, [])
 
   const rows = useMemo(() => orders.map((o) => {
     const pipe = computePipeline(o, stages, scoring)
     return { o, pipe, score: computeScore(pipe, scoring) }
   }), [orders, stages, scoring])
 
-  // bill-wise: har bill ki alag row (us bill ki date/amount/items ke saath); bina bill wale SO waise hi dikhte hain
+  // bill-wise: har bill ki alag row; item-wise: har product line ki alag row; bina bill wale SO waise hi dikhte hain
   const viewRows = useMemo(() => {
     if (view === 'so') return rows
+    if (view === 'item') {
+      const out = []
+      for (const { o, pipe, score } of rows) {
+        const ps = o.products?.length ? o.products : [null]
+        ps.forEach((p, i) => out.push({
+          o: {
+            ...o, _billKey: o.mobile_so_no + '_item' + i,
+            products: p ? [p] : [], line_count: 1,
+            so_qty: p?.qty ?? null, pending_qty: p?.pending ?? null,
+          },
+          pipe, score,
+        }))
+      }
+      return out
+    }
     const out = []
     for (const { o } of orders.map((o) => ({ o }))) {
       // purane synced rows me bills nahi hota — bill_nos se bana lo
@@ -124,7 +156,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
   const partyOpts = useMemo(() => [...new Set(orders.map((o) => o.account_name).filter(Boolean))].sort(), [orders])
 
   const filtered = viewRows.filter(({ o, pipe }) => {
-    if (q && !(`${o.account_name} ${o.mobile_so_no} ${o.mobile_no}`.toLowerCase().includes(q.toLowerCase()))) return false
+    if (q && !(`${o.account_name} ${o.mobile_so_no} ${o.mobile_no} ${(o.products || []).map((p) => p.name + ' ' + p.code).join(' ')}`.toLowerCase().includes(q.toLowerCase()))) return false
     const pi = partyInfo?.[o.account_name] || {}
     if (fBeat && pi.beat !== fBeat) return false
     if (fSalesman && pi.salesman !== fSalesman) return false
@@ -161,8 +193,9 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
         <select value={view} onChange={(e) => setView(e.target.value)} title="Row kis hisaab se dikhe">
           <option value="so">📄 SO-wise</option>
           <option value="bill">🧾 Bill-wise</option>
+          <option value="item">📦 Item-wise</option>
         </select>
-        <input className="search" placeholder="🔍 Client / SO No…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="search" placeholder="🔍 Client / SO No / Item…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="all">All orders</option>
           <option value="delayed">⚠ Delayed</option>
@@ -265,6 +298,19 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       return <td key={c.col_key}>{link ? <a className="wa-btn" href={link} target="_blank" rel="noreferrer" title="Client ko order status WhatsApp karo">📤 Status</a> : '—'}</td>
                     }
                     case 'acc_family': return <td key={c.col_key}>{o.acc_family || '—'}</td>
+                    case 'item': {
+                      const ps = o.products || []
+                      if (ps.length === 1) return <td key={c.col_key} className="item-cell" title={`${ps[0].name} (${ps[0].code || ''})`}>{ps[0].name}{ps[0].qty != null ? ` · ${ps[0].qty} ${ps[0].unit || ''}` : ''}</td>
+                      return <td key={c.col_key} className="item-cell muted">{ps.length ? ps.length + ' items' : '—'}</td>
+                    }
+                    case 'stock': {
+                      const ps = o.products || []
+                      if (ps.length !== 1) return <td key={c.col_key} className="muted">—</td>
+                      if (stockMap == null) return <td key={c.col_key} className="muted">…</td>
+                      const s = stockMap[String(ps[0].code || '').trim().toLowerCase()]
+                      if (!s) return <td key={c.col_key} className="muted">—</td>
+                      return <td key={c.col_key} className={`num stock-cell ${s.total <= 0 ? 'stock-neg' : ''}`} title={s.status}>{s.total.toLocaleString('en-IN')} {s.unit}</td>
+                    }
                     case 'so_number': return <td key={c.col_key}>{o.sorder_no ?? '—'}</td>
                     case 'so_amount': return <td key={c.col_key} className="num">{inr(o.sorder_amount ?? o.mobile_so_amount)}</td>
                     case 'pending_qty': return <td key={c.col_key} className={`num ${Number(o.pending_qty) > 0 ? 'warn' : ''}`}>{o.pending_qty ?? '—'}</td>

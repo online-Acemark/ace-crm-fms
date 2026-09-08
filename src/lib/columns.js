@@ -36,6 +36,8 @@ export const COLUMNS = [
   { col_key: 'acc_family',      label: 'Family',        col_type: 'builtin' },
   { col_key: 'so_number',       label: 'SO Number',     col_type: 'builtin' },
   { col_key: 'so_amount',       label: 'SO Amount',     col_type: 'builtin' },
+  { col_key: 'item',            label: 'Item',          col_type: 'builtin' },
+  { col_key: 'stock',           label: 'Stock',         col_type: 'builtin' },
   { col_key: 'client_update',   label: 'Client Update', col_type: 'builtin' },
   { col_key: 'stage_so_convert', label: 'Confirm Order', col_type: 'stage' },
   { col_key: 'stage_billing',   label: 'Billing',       col_type: 'stage' },
