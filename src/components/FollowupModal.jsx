@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { suggestNextFollowup } from '../lib/fms'
 import { toLocalInput } from './Grid'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -11,7 +12,8 @@ export default function FollowupModal({ order, onClose, onChanged }) {
   const [fups, setFups] = useState([])
   const [note, setNote] = useState('')
   const [amt, setAmt] = useState('')
-  const [nextDate, setNextDate] = useState(toLocalInput(order.next_followup_date))
+  // default: +3 din (working day, 11 AM) — follow-up chain kabhi na toote
+  const [nextDate, setNextDate] = useState(toLocalInput(order.next_followup_date) || toLocalInput(suggestNextFollowup()))
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
   const [err, setErr] = useState('')
@@ -26,7 +28,8 @@ export default function FollowupModal({ order, onClose, onChanged }) {
   useEffect(() => { loadFups() }, [order.mobile_so_no])
 
   const save = async () => {
-    if (!note.trim() && !nextDate && !Number(amt)) return
+    if (!note.trim() && !Number(amt)) { setErr('Remark ya amount dalo'); return }
+    if (!nextDate) { setErr('Next follow-up date zaroori hai — bina date ke party list se gayab ho jayegi'); return }
     setSaving(true); setErr('')
     if (isDemo) {
       // demo mode: database me save nahi hota, sirf screen par log dikhta hai

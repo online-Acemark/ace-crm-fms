@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -259,7 +259,8 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                               {b.url
                                 ? <a className="link" href={b.url} target="_blank" rel="noreferrer" title="Invoice PDF kholo">#{b.bill_no}</a>
                                 : <span>#{b.bill_no}</span>}
-                              {o.mobile_no && <a className="wa-mini" href={waLink(o.mobile_no, buildBillMsg(o, b))} target="_blank" rel="noreferrer" title="Is bill ka WhatsApp message bhejo">📤</a>}
+                              {o.mobile_no && <a className="wa-mini" href={waLink(o.mobile_no, buildBillMsg(o, b))} target="_blank" rel="noreferrer" title="Is bill ka WhatsApp message bhejo"
+                                onClick={() => logWaSend(o, `WhatsApp bill message bheja (Bill #${b.bill_no})`).then(() => onChanged?.())}>📤</a>}
                             </span>
                           ))
                         })()}
@@ -297,7 +298,8 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                     case 'email_id2': return <ContactCell key={c.col_key} order={o} field="email_id2" placeholder="+ email 2" isEmail onChanged={onChanged} />
                     case 'client_update': {
                       const link = waLink(o.mobile_no, buildStatusMsg(o, pipe))
-                      return <td key={c.col_key}>{link ? <a className="wa-btn" href={link} target="_blank" rel="noreferrer" title="Client ko order status WhatsApp karo">📤 Status</a> : '—'}</td>
+                      return <td key={c.col_key}>{link ? <a className="wa-btn" href={link} target="_blank" rel="noreferrer" title="Client ko order status WhatsApp karo"
+                        onClick={() => logWaSend(o, 'WhatsApp status bheja').then(() => onChanged?.())}>📤 Status</a> : '—'}</td>
                     }
                     case 'acc_family': return <td key={c.col_key}>{o.acc_family || '—'}</td>
                     case 'item': {

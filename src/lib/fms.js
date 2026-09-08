@@ -43,21 +43,21 @@ export function buildStatusMsg(o, pipe) {
   const c = resolveContact(o)
   const name = c.contact_person ? `${c.contact_person} ji` : `${o.account_name}`
   const dt = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''
-  const lines = [`Namaste ${name} 🙏`, `Aapke order (SO #${o.mobile_so_no}, ${dt(o.mobile_so_created)}) ka status:`, '']
+  const lines = [`Namaste ${name}`, `Aapke order (SO #${o.mobile_so_no}, ${dt(o.mobile_so_created)}) ka status:`, '']
   if (o.desp_date) {
-    lines.push(`✅ Order dispatch ho chuka hai (${dt(o.desp_date)}).`)
+    lines.push(`Order dispatch ho chuka hai (${dt(o.desp_date)}).`)
   } else if (o.gpout_created) {
-    lines.push(`🚚 Maal gate pass ho gaya hai — dispatch aaj/kal me ho jayega.`)
+    lines.push(`Maal gate pass ho gaya hai — dispatch aaj/kal me ho jayega.`)
   } else if (o.billing_date) {
-    lines.push(`🧾 Billing ho gayi hai (${dt(o.billing_date)}), dispatch ki taiyari chal rahi hai.`)
+    lines.push(`Billing ho gayi hai (${dt(o.billing_date)}), dispatch ki taiyari chal rahi hai.`)
   } else if (o.so_convert_date) {
-    lines.push(`✅ Order confirm ho gaya hai, billing process me hai.`)
+    lines.push(`Order confirm ho gaya hai, billing process me hai.`)
   } else {
-    lines.push(`📝 Order receive ho gaya hai, confirm karke jaldi update denge.`)
+    lines.push(`Order receive ho gaya hai, confirm karke jaldi update denge.`)
   }
-  if (Number(o.pending_qty) > 0) lines.push(`ℹ️ ${o.pending_qty} qty abhi pending hai, baki dispatch ho chuki/ho rahi hai.`)
-  if (o.bill_net_amount) lines.push(`💰 Bill amount: ₹${Number(o.bill_net_amount).toLocaleString('en-IN')}${o.credit_days ? ` (credit ${o.credit_days} din)` : ''}`)
-  if ((o.inv_urls || []).length) lines.push(`📄 Invoice: ${o.inv_urls[0]}`)
+  if (Number(o.pending_qty) > 0) lines.push(`${o.pending_qty} qty abhi pending hai, baki dispatch ho chuki/ho rahi hai.`)
+  if (o.bill_net_amount) lines.push(`Bill amount: ₹${Number(o.bill_net_amount).toLocaleString('en-IN')}${o.credit_days ? ` (credit ${o.credit_days} din)` : ''}`)
+  if ((o.inv_urls || []).length) lines.push(`Invoice: ${o.inv_urls[0]}`)
   lines.push('', 'Koi bhi jankari ke liye humein batayein. Dhanyavaad!', '— Acemark Stationers')
   return lines.join('\n')
 }
@@ -67,19 +67,40 @@ export function noFollowup(o) {
   return String(o.acc_family || '').trim().toUpperCase() === 'N'
 }
 
-// bill-wise WhatsApp message: party naam, bill no, amount, qty, due date, invoice PDF
+// bill-wise WhatsApp message: person naam (na ho to party naam), bill no, amount, qty, due date, invoice PDF
 export function buildBillMsg(o, b) {
-  const lines = [`Namaste ${o.account_name} 🙏`, '', 'Aapka bill ban gaya hai:']
-  lines.push(`🧾 Bill No: ${b.bill_no}${b.billing_date ? ` (${new Date(b.billing_date).toLocaleDateString('en-IN')})` : ''}`)
-  if (b.amount != null) lines.push(`💰 Amount: ₹${Number(b.amount).toLocaleString('en-IN')}`)
-  if (b.qty) lines.push(`📦 Qty: ${Number(b.qty).toLocaleString('en-IN')}`)
+  const c = resolveContact(o)
+  const name = c.contact_person ? `${c.contact_person} ji` : `${o.account_name}`
+  const lines = [`Namaste ${name}`, '', 'Aapka bill ban gaya hai:']
+  lines.push(`Bill No: ${b.bill_no}${b.billing_date ? ` (${new Date(b.billing_date).toLocaleDateString('en-IN')})` : ''}`)
+  if (b.amount != null) lines.push(`Amount: ₹${Number(b.amount).toLocaleString('en-IN')}`)
+  if (b.qty) lines.push(`Qty: ${Number(b.qty).toLocaleString('en-IN')}`)
   if (o.credit_days != null && b.billing_date) {
-    const due = new Date(new Date(b.billing_date).getTime() + o.credit_days * 864e5)
-    lines.push(`📅 Payment due: ${due.toLocaleDateString('en-IN')} (credit ${o.credit_days} din)`)
+    const due = paymentDue(b.billing_date, o.credit_days)
+    lines.push(`Payment due: ${due.toLocaleDateString('en-IN')} (credit ${o.credit_days} din)`)
   }
-  if (b.url) lines.push(`📄 Invoice: ${b.url}`)
+  if (b.url) lines.push(`Invoice: ${b.url}`)
   lines.push('', 'Koi bhi jankari ke liye humein batayein. Dhanyavaad!', '— Acemark Stationers')
   return lines.join('\n')
+}
+
+// WhatsApp bhejne ka log: 📤 click par fms_followups me entry (communication trail)
+export async function logWaSend(o, note) {
+  if (new URLSearchParams(window.location.search).has('demo')) return
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('fms_followups').insert({
+      mobile_so_no: o.mobile_so_no, remarks: note, mode: 'whatsapp', created_by: user?.email || '',
+    })
+  } catch { /* log fail hone par bhi WhatsApp khulna nahi rukna chahiye */ }
+}
+
+// follow-up ka default next date: +N din, Sunday/holiday skip, 11:00 AM
+export function suggestNextFollowup(days = 3) {
+  let dt = new Date(Date.now() + days * 864e5)
+  if (!isWorkingDay(dt)) dt = nextWorkingDay(dt)
+  dt.setHours(11, 0, 0, 0)
+  return dt
 }
 
 export function waLink(mobile, text) {

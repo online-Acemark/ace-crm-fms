@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, buildStatusMsg, waLink, noFollowup } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup } from '../lib/fms'
 import { toLocalInput } from './Grid'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -9,7 +9,8 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
   const [fups, setFups] = useState([])
   const [note, setNote] = useState('')
   const [amt, setAmt] = useState('')
-  const [nextDate, setNextDate] = useState(toLocalInput(order.next_followup_date))
+  // default: +3 din (working day, 11 AM) — follow-up chain kabhi na toote
+  const [nextDate, setNextDate] = useState(toLocalInput(order.next_followup_date) || toLocalInput(suggestNextFollowup()))
   const [fupMsg, setFupMsg] = useState('')
   const [fupErr, setFupErr] = useState('')
   const isDemo = new URLSearchParams(window.location.search).has('demo')
@@ -33,7 +34,8 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
   }, [order.mobile_so_no])
 
   const addFup = async () => {
-    if (!note.trim() && !nextDate && !Number(amt)) return
+    if (!note.trim() && !Number(amt)) { setFupErr('Remark ya amount dalo'); return }
+    if (!nextDate) { setFupErr('Next follow-up date zaroori hai — bina date ke party list se gayab ho jayegi'); return }
     setFupErr('')
     if (isDemo) {
       // demo mode: database me save nahi hota, sirf screen par log dikhta hai
@@ -76,7 +78,8 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
             <div className="muted small">{order.mobile_no} {contact.contact_person && '· ' + contact.contact_person} · Family {order.acc_family || '—'} · Credit {order.credit_days ?? '—'} days</div>
           </div>
           <div className="head-btns">
-            {statusWa && <a className="wa-btn big" href={statusWa} target="_blank" rel="noreferrer">📤 Client Ko Status Bhejo</a>}
+            {statusWa && <a className="wa-btn big" href={statusWa} target="_blank" rel="noreferrer"
+              onClick={() => logWaSend(order, 'WhatsApp status bheja').then(() => onChanged?.())}>📤 Client Ko Status Bhejo</a>}
             <button className="btn ghost" onClick={onClose}>✕</button>
           </div>
         </div>

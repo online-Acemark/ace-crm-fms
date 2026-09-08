@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -79,13 +79,19 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                           {sec.key === 'confirm' && <>SO aaya: {fmtDT(o.mobile_so_created)}</>}
                           {sec.key === 'billing' && <>Confirm hua: {fmtDT(o.so_convert_date)}</>}
                           {sec.key === 'dispatch' && <>Bill bana: {fmtDT(o.billing_date)}</>}
-                          {sec.key === 'payment' && <>{fupDue && <b className="amber-t">📅 Follow-up aaj due · </b>}Due: {due ? due.toLocaleDateString('en-IN') : '—'} · ₹{Number(o.bill_net_amount || o.sorder_amount || 0).toLocaleString('en-IN')}</>}
+                          {sec.key === 'payment' && (() => {
+                            const overdueDays = pipe.payment?.planned ? Math.floor((Date.now() - new Date(pipe.payment.planned).getTime()) / 864e5) : 0
+                            const bucket = overdueDays > 30 ? 'bkt-30' : overdueDays > 7 ? 'bkt-8' : ''
+                            return <>{fupDue && <b className="amber-t">📅 Follow-up aaj due · </b>}Due: {due ? due.toLocaleDateString('en-IN') : '—'} · ₹{Number(o.bill_net_amount || o.sorder_amount || 0).toLocaleString('en-IN')}
+                              {overdueDays > 0 && <span className={`age-chip ${bucket}`}>{overdueDays > 30 ? '🔴' : overdueDays > 7 ? '🟠' : '🟡'} {overdueDays}d overdue</span>}</>
+                          })()}
                           {sec.key === 'contact' && <span className="muted">Missing: {[!c.contact_person && 'Person 1', !c.contact_person2 && 'Person 2', !c.email_id && 'Email 1', !c.email_id2 && 'Email 2'].filter(Boolean).join(', ')}</span>}
                         </td>
                         <td>{d != null && d > 0 && <span className="red-t"><b>⏰ {fmtDelay(d)} late</b></span>}</td>
                         <td>
                           {sec.key === 'payment' && <button className="btn primary sm" onClick={() => setFupOrder(o)}>📝 Follow-up</button>}
-                          {wa && sec.key !== 'contact' && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer">📤 Status</a>}
+                          {wa && sec.key !== 'contact' && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer"
+                            onClick={() => logWaSend(o, 'WhatsApp status bheja').then(() => onChanged?.())}>📤 Status</a>}
                         </td>
                       </tr>
                     )
