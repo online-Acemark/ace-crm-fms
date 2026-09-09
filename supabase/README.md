@@ -25,6 +25,9 @@ Koi rule badle to **dono jagah** badalna hai.
 
 ## Settings (database me)
 
+- `fms_settings` key `erp`: `{ "so_url": "<MobileSO.ashx URL>", "stock_url": "<ProductStock.ashx URL>" }`
+  — ERP API addresses. **ERP ka address badle to sirf ye row update karo** (SQL ya
+  Supabase Table Editor se) — kisi function ka redeploy nahi chahiye.
 - `fms_settings` key `telegram`: `{ "token": "<bot token>", "chat_id": "<chat id>" }`
   — digest/alerts kahan jayenge. Group me bhejne ke liye bas chat_id badal do.
 - `fms_settings` key `scoring`: scoring rules (app ke Stage Plan tab se bhi).

@@ -1,8 +1,26 @@
-// FMS proxy: fetches ERP APIs server-side and returns JSON with CORS headers
-const SOURCES: Record<string, string> = {
+// FMS proxy: fetches ERP APIs server-side and returns JSON with CORS headers.
+// ERP URLs fms_settings (key='erp') se aate hain: { "so_url": "...", "stock_url": "..." }
+// — URL badalna ho to sirf wahi row update karo, redeploy ki zaroorat nahi.
+const DEFAULTS: Record<string, string> = {
   so: "http://eksai12.ddns.net:8786/ek_api/telegramApi/MobileSO.ashx",
   stock: "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx",
 };
+
+const SB_URL = Deno.env.get("SUPABASE_URL")!;
+const KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+async function getSources(): Promise<Record<string, string>> {
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/fms_settings?key=eq.erp&select=value`, {
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    });
+    const j = await r.json();
+    const v = j?.[0]?.value || {};
+    return { so: v.so_url || DEFAULTS.so, stock: v.stock_url || DEFAULTS.stock };
+  } catch {
+    return DEFAULTS;
+  }
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +33,8 @@ Deno.serve(async (req) => {
   try {
     const url = new URL(req.url);
     const src = url.searchParams.get("src") ?? "so";
-    const target = SOURCES[src];
+    const sources = await getSources();
+    const target = sources[src];
     if (!target) {
       return new Response(JSON.stringify({ error: "unknown src" }), {
         status: 400,

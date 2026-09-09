@@ -1,7 +1,10 @@
 // FMS auto-sync: ERP MobileSO -> fms_orders (server-side). Cron har 30 min isko call karta hai.
 // Logic client ke src/lib/fms.js ka mirror hai — wahan rule badle to yahan bhi badalna.
-const ERP_SO = "http://eksai12.ddns.net:8786/ek_api/telegramApi/MobileSO.ashx";
-const ERP_STOCK = "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx";
+// ERP URLs fms_settings (key='erp') se aate hain: { "so_url": "...", "stock_url": "..." }
+const ERP_DEFAULTS = {
+  so: "http://eksai12.ddns.net:8786/ek_api/telegramApi/MobileSO.ashx",
+  stock: "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx",
+};
 const IST = 5.5 * 3600 * 1000; // function UTC me chalta hai; ERP dates IST wall-clock naked strings hain
 const H = 3600 * 1000;
 
@@ -217,14 +220,18 @@ function computeScore(pipe: Record<string, any>, scoring: any) {
 
 Deno.serve(async () => {
   try {
-    const [stages, scoringRow, wd, hd, existing] = await Promise.all([
+    const [stages, scoringRow, erpRow, wd, hd, existing] = await Promise.all([
       sb("fms_stage_config?select=*&order=sort_order"),
       sb("fms_settings?key=eq.scoring&select=value"),
+      sb("fms_settings?key=eq.erp&select=value"),
       sb("working_day_calender?select=working_date"),
       sb("holidays?select=holiday_date"),
       sb("fms_orders?select=mobile_so_no,payment_complete,payment_date"),
     ]);
     const scoring = scoringRow?.[0]?.value || {};
+    const erpCfg = erpRow?.[0]?.value || {};
+    const ERP_SO = erpCfg.so_url || ERP_DEFAULTS.so;
+    const ERP_STOCK = erpCfg.stock_url || ERP_DEFAULTS.stock;
     const hset = new Set((hd || []).map((r: any) => r.holiday_date));
     workingDaySet = new Set((wd || []).map((r: any) => r.working_date).filter((x: string) => !hset.has(x)));
 
