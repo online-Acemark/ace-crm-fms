@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -149,7 +149,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
     if (fSalesman && smOf(o) !== fSalesman) return false
     if (fParty && o.account_name !== fParty) return false
     if (filter === 'delayed') return Object.values(pipe).some((p) => p.status === 'late' || p.status === 'running')
-    if (filter === 'payment') return pipe.payment && ['running', 'pending', 'late'].includes(pipe.payment.status) && !o.payment_complete
+    if (filter === 'payment') return pipe.payment && ['running', 'pending', 'late'].includes(pipe.payment.status) && !isPaid(o)
     if (filter === 'pending') return Number(o.pending_qty) > 0
     if (filter === 'contact') return contactMissing(o)
     return true
@@ -326,6 +326,13 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                     case 'credit_date': {
                       const due = paymentDue(o.billing_date, o.credit_days)
                       return <td key={c.col_key} className="small">{due ? <>{fmtDT(due)}{o.credit_days != null && <span className="muted"> ({o.credit_days}d)</span>}</> : <span className="muted">—</span>}</td>
+                    }
+                    case 'pay_status': {
+                      if (!o.pay_status) return <td key={c.col_key} className="muted">—</td>
+                      const pend = o.payment_pending_erp != null ? Number(o.payment_pending_erp) : null
+                      if (o.pay_status === 'Full') return <td key={c.col_key}><span className="pay-badge pay-full">✔ Full</span></td>
+                      if (o.pay_status === 'Part') return <td key={c.col_key}><span className="pay-badge pay-part">Part{pend ? ` · ₹${pend.toLocaleString('en-IN')} baaki` : ''}</span></td>
+                      return <td key={c.col_key}><span className="pay-badge pay-pend">Pending{pend ? ` · ₹${pend.toLocaleString('en-IN')}` : ''}</span></td>
                     }
                     case 'stock': {
                       const ps = o.products || []

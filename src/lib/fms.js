@@ -73,6 +73,11 @@ export function noFollowup(o) {
   return String(o.acc_family || '').trim().toUpperCase() === 'N'
 }
 
+// paid = manual ✔ YA ERP payment reconciliation kehta hai saare bills Full paid hain
+export function isPaid(o) {
+  return !!o.payment_complete || o.pay_status === 'Full'
+}
+
 // bill-wise WhatsApp message: person naam (na ho to party naam), bill no, amount, qty, due date, invoice PDF
 export function buildBillMsg(o, b) {
   const c = resolveContact(o)
@@ -288,7 +293,7 @@ export function computePipeline(o, stages, scoring) {
     billing: d(o.billing_date),
     gpout: d(o.gpout_created),
     dispatch: d(o.desp_date),
-    payment: o.payment_complete ? d(o.payment_date) || new Date() : null,
+    payment: (o.payment_complete || o.pay_status === 'Full') ? d(o.payment_date) || d(o.pay_last_date) || new Date() : null,
   }
   const now = new Date()
   for (const st of stages.filter((s) => s.active)) {

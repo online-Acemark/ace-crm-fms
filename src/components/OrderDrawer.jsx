@@ -126,7 +126,12 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
             <div className="amounts">
               <div>SO: <b>{inr(order.sorder_amount)}</b></div>
               <div>Billed: <b>{inr(order.bill_net_amount)}</b></div>
-              <div>Received: <b>{inr(order.payment_received)}</b></div>
+              {order.pay_status
+                ? <>
+                  <div>Received (ERP): <b className="green-t">{inr(order.payment_received_erp)}</b></div>
+                  <div>Baaki (ERP): <b className={Number(order.payment_pending_erp) > 0 ? 'red-t' : ''}>{inr(order.payment_pending_erp)}</b></div>
+                </>
+                : <div>Received: <b>{inr(order.payment_received)}</b></div>}
             </div>
           </div>
           <div>

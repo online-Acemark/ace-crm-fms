@@ -4,6 +4,7 @@
 const ERP_DEFAULTS = {
   so: "http://eksai12.ddns.net:8786/ek_api/telegramApi/MobileSO.ashx",
   stock: "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx",
+  payment: "http://eksai12.ddns.net:8786/ek_api/telegramApi/Payment.ashx",
 };
 const IST = 5.5 * 3600 * 1000; // function UTC me chalta hai; ERP dates IST wall-clock naked strings hain
 const H = 3600 * 1000;
@@ -82,6 +83,63 @@ function billingPlanned(base: Date | null, o: any) {
   else day = nextWorkingDay(base);
   day.setHours(BILL_CUTOFF[0], BILL_CUTOFF[1], 0, 0);
   return day;
+}
+
+// ---------- ERP Payment.ashx: bill-wise payment reconciliation ----------
+const nums = (v: unknown) => (v == null || v === "" ? 0 : Number(v) || 0);
+const MONTHS: Record<string, number> = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+// '20-Feb-26' -> '2026-02-20'
+function parsePayDate(s: unknown) {
+  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/.exec(String(s || "").trim());
+  if (!m) return null;
+  const mo = MONTHS[m[2]];
+  if (!mo) return null;
+  return `20${m[3]}-${String(mo).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
+const tailOf = (bn: unknown) => {
+  const m = /(\d+)\s*$/.exec(String(bn || ""));
+  return m ? String(Number(m[1])) : null;
+};
+const norm = (s: unknown) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+// index: tail -> Map(full BillNo -> payment rows)
+let payIdx: Map<string, Map<string, any[]>> | null = null;
+function buildPayIdx(rows: any[]) {
+  payIdx = new Map();
+  for (const r of rows) {
+    const t = tailOf(r.BillNo);
+    if (!t) continue;
+    let m = payIdx.get(t);
+    if (!m) { m = new Map(); payIdx.set(t, m); }
+    const k = String(r.BillNo);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k)!.push(r);
+  }
+}
+
+// ek bill ka payment summary; AS/AM series collision party name se resolve hoti hai
+function billPayment(billNo: unknown, accountName: string) {
+  if (!payIdx) return null;
+  const m = payIdx.get(String(Number(billNo)) || String(billNo));
+  if (!m) return null;
+  // party name match HAMESHA zaroori — same number alag series/saal me alag party ka hota hai
+  const groups = [...m.values()].filter((rows) => rows.some((r) => norm(r.PartyName) === norm(accountName)));
+  if (groups.length !== 1) return null; // no match ya ambiguous — galat data se behtar hai skip
+  const rows = groups[0];
+  // NOTE: PaidAmt/TotalAdjusted VOUCHER-level hote hain (ek voucher kai bills cover karta hai) —
+  // isliye per-bill hisaab BillAmt - StillPending se hota hai (dono bill-level hain)
+  let anyFull = false, lastPay: string | null = null;
+  const pendingVals: number[] = [];
+  for (const r of rows) {
+    if (r.PayStatus === "Full") anyFull = true;
+    if (r.StillPending !== "" && r.StillPending != null) pendingVals.push(nums(r.StillPending));
+    const pd = parsePayDate(r.PayDate);
+    if (pd && (!lastPay || pd > lastPay)) lastPay = pd;
+  }
+  const billAmt = nums(rows[0].BillAmt);
+  const pending = anyFull ? 0 : (pendingVals.length ? Math.min(...pendingVals) : billAmt);
+  const received = Math.max(0, billAmt - pending);
+  return { received, pending, status: anyFull ? "Full" : received > 0 ? "Part" : "Pending", lastPay };
 }
 
 function paymentDue(billDate: unknown, creditDays: number | null) {
@@ -232,6 +290,7 @@ Deno.serve(async () => {
     const erpCfg = erpRow?.[0]?.value || {};
     const ERP_SO = erpCfg.so_url || ERP_DEFAULTS.so;
     const ERP_STOCK = erpCfg.stock_url || ERP_DEFAULTS.stock;
+    const ERP_PAYMENT = erpCfg.payment_url || ERP_DEFAULTS.payment;
     const hset = new Set((hd || []).map((r: any) => r.holiday_date));
     workingDaySet = new Set((wd || []).map((r: any) => r.working_date).filter((x: string) => !hset.has(x)));
 
@@ -243,6 +302,14 @@ Deno.serve(async () => {
       for (const r of srows) if (r.ProductCode) stockMap[String(r.ProductCode).trim().toLowerCase()] = Number(r.Total) || 0;
     } catch { stockMap = null; }
 
+    // ERP payment reconciliation — fail ho to pay fields null rehte hain, sync nahi rukta
+    try {
+      const pres = await fetch(ERP_PAYMENT, { signal: AbortSignal.timeout(120000) });
+      const pjson = await pres.json();
+      const prows = Array.isArray(pjson) ? pjson : pjson?.DataRec || [];
+      if (prows.length) buildPayIdx(prows);
+    } catch { payIdx = null; }
+
     const res = await fetch(ERP_SO, { signal: AbortSignal.timeout(120000) });
     const json = await res.json();
     const raw = Array.isArray(json) ? json : json?.DataRec || [];
@@ -251,8 +318,30 @@ Deno.serve(async () => {
     const aggregated = aggregateSO(raw);
     const exMap = new Map((existing || []).map((e: any) => [e.mobile_so_no, e]));
     const payload = aggregated.map((o) => {
+      // ERP payment data: order ke har bill ka summary jodkar
+      let rec = 0, pen = 0, matched = 0, lastPay: string | null = null;
+      const statuses: string[] = [];
+      for (const bn of o.bill_nos || []) {
+        const s = billPayment(bn, o.account_name);
+        if (!s) continue;
+        matched++;
+        rec += s.received; pen += s.pending; statuses.push(s.status);
+        if (s.lastPay && (!lastPay || s.lastPay > lastPay)) lastPay = s.lastPay;
+      }
+      o.payment_received_erp = matched ? rec : null;
+      o.payment_pending_erp = matched ? pen : null;
+      o.pay_status = matched
+        ? (matched === (o.bill_nos || []).length && statuses.every((x) => x === "Full") ? "Full" : rec > 0 ? "Part" : "Pending")
+        : null;
+      o.pay_last_date = lastPay;
+
       const ex = exMap.get(o.mobile_so_no);
-      const merged = { ...o, payment_complete: ex?.payment_complete || false, payment_date: ex?.payment_date || null };
+      // ERP Full = payment complete (manual ✔ bhi respect hota hai)
+      const merged = {
+        ...o,
+        payment_complete: ex?.payment_complete || o.pay_status === "Full",
+        payment_date: ex?.payment_date || o.pay_last_date || null,
+      };
       const pipe = computePipeline(merged, stages, scoring);
       const delays: Record<string, number> = {};
       for (const k of Object.keys(pipe)) if (pipe[k].delayH != null) delays[k] = Math.round(pipe[k].delayH * 100) / 100;

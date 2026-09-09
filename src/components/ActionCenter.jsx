@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -39,9 +39,9 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
       else if (!o.billing_date && (pipe.billing?.status === 'running')) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
       if (o.billing_date && !o.desp_date && ['running', 'pending'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
       const fupDue = o.next_followup_date && new Date(o.next_followup_date) <= new Date()
-      // Family N = No follow-up — payment list me mat dikhao
-      if (!o.payment_complete && !noFollowup(o) && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
-      if (contactMissing(o) && !o.payment_complete) t.contact.push({ o, pipe })
+      // Family N = No follow-up — payment list me mat dikhao; ERP Full-paid bhi bahar
+      if (!isPaid(o) && !noFollowup(o) && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
+      if (contactMissing(o) && !isPaid(o)) t.contact.push({ o, pipe })
     }
     for (const k of Object.keys(t)) t[k].sort((a, b) => (b.d || 0) - (a.d || 0))
     return t
@@ -82,7 +82,8 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                           {sec.key === 'payment' && (() => {
                             const overdueDays = pipe.payment?.planned ? Math.floor((Date.now() - new Date(pipe.payment.planned).getTime()) / 864e5) : 0
                             const bucket = overdueDays > 30 ? 'bkt-30' : overdueDays > 7 ? 'bkt-8' : ''
-                            return <>{fupDue && <b className="amber-t">📅 Follow-up aaj due · </b>}Due: {due ? due.toLocaleDateString('en-IN') : '—'} · ₹{Number(o.bill_net_amount || o.sorder_amount || 0).toLocaleString('en-IN')}
+                            const baaki = o.payment_pending_erp != null ? Number(o.payment_pending_erp) : Number(o.bill_net_amount || o.sorder_amount || 0)
+                            return <>{fupDue && <b className="amber-t">📅 Follow-up aaj due · </b>}Due: {due ? due.toLocaleDateString('en-IN') : '—'} · <b>Baaki ₹{baaki.toLocaleString('en-IN')}</b>{o.pay_status === 'Part' && <span className="amber-t"> (Part paid)</span>}
                               {overdueDays > 0 && <span className={`age-chip ${bucket}`}>{overdueDays > 30 ? '🔴' : overdueDays > 7 ? '🟠' : '🟡'} {overdueDays}d overdue</span>}</>
                           })()}
                           {sec.key === 'contact' && <span className="muted">Missing: {[!c.contact_person && 'Person 1', !c.contact_person2 && 'Person 2', !c.email_id && 'Email 1', !c.email_id2 && 'Email 2'].filter(Boolean).join(', ')}</span>}
