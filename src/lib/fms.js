@@ -1,9 +1,15 @@
 import { supabase, SUPABASE_URL, SUPABASE_ANON } from './supabase'
 
+// ---------- config (.env se; sensible defaults) ----------
+// ERP proxy ka URL — default: Supabase edge function fms-proxy
+const FMS_PROXY_URL = import.meta.env.VITE_FMS_PROXY_URL || `${SUPABASE_URL}/functions/v1/fms-proxy`
+// WhatsApp country code (wa.me links ke liye)
+const WA_COUNTRY = import.meta.env.VITE_WA_COUNTRY_CODE || '91'
+
 // ---------- fetch ERP data via edge-function proxy ----------
 export async function fetchERP(src) {
   const { data: { session } } = await supabase.auth.getSession()
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/fms-proxy?src=${src}`, {
+  const res = await fetch(`${FMS_PROXY_URL}?src=${src}`, {
     headers: {
       apikey: SUPABASE_ANON,
       Authorization: `Bearer ${session?.access_token || SUPABASE_ANON}`,
@@ -106,7 +112,7 @@ export function suggestNextFollowup(days = 3) {
 export function waLink(mobile, text) {
   const m = String(mobile || '').replace(/\D/g, '')
   if (!m) return null
-  return `https://wa.me/91${m.slice(-10)}${text ? '?text=' + encodeURIComponent(text) : ''}`
+  return `https://wa.me/${WA_COUNTRY}${m.slice(-10)}${text ? '?text=' + encodeURIComponent(text) : ''}`
 }
 
 // ---------- aggregate MobileSO line rows -> one row per SO ----------
