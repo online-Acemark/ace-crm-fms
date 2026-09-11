@@ -44,7 +44,7 @@ export const COLUMNS = [
   { col_key: 'bill_date',       label: 'Bill Date',     col_type: 'builtin' },
   { col_key: 'credit_date',     label: 'Credit Date',   col_type: 'builtin' },
   { col_key: 'pay_status',      label: 'Pay Status',    col_type: 'builtin' },
-  { col_key: 'client_update',   label: 'Client Update', col_type: 'builtin' },
+  { col_key: 'client_update',   label: 'Client Update', col_type: 'builtin', visible: false },
   { col_key: 'stage_so_convert', label: 'Confirm Order', col_type: 'stage' },
   { col_key: 'stage_billing',   label: 'Billing',       col_type: 'stage' },
   { col_key: 'stage_gpout',     label: 'Gate Pass Out', col_type: 'stage' },
