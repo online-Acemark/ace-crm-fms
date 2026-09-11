@@ -136,6 +136,17 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
           </div>
           <div>
             <h3>💰 Payment Follow-up</h3>
+            {(order.bills_payment || []).length > 0 && (
+              <ul className="billpay-list">
+                {order.bills_payment.map((b) => (
+                  <li key={b.bill_no}>
+                    <b>#{b.bill_no}</b> — <span className={b.status === 'Full' ? 'green-t' : b.status === 'Part' ? 'amber-t' : 'red-t'}>{b.status}</span>
+                    {Number(b.received) > 0 && <> · <span className="green-t">₹{Number(b.received).toLocaleString('en-IN')} aaya{b.last_pay ? ` (${new Date(b.last_pay).toLocaleDateString('en-IN')})` : ''}</span></>}
+                    {Number(b.pending) > 0 && <> · <span className="red-t">₹{Number(b.pending).toLocaleString('en-IN')} baaki</span></>}
+                  </li>
+                ))}
+              </ul>
+            )}
             {noFollowup(order) ? (
               <p className="amber-t small">🚫 <b>Family N = No follow-up</b> — is account ka payment follow-up nahi karna hai.</p>
             ) : (

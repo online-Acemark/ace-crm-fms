@@ -321,15 +321,18 @@ Deno.serve(async () => {
       // ERP payment data: order ke har bill ka summary jodkar
       let rec = 0, pen = 0, matched = 0, lastPay: string | null = null;
       const statuses: string[] = [];
+      const billsPay: any[] = [];
       for (const bn of o.bill_nos || []) {
         const s = billPayment(bn, o.account_name);
         if (!s) continue;
         matched++;
         rec += s.received; pen += s.pending; statuses.push(s.status);
+        billsPay.push({ bill_no: bn, status: s.status, received: s.received, pending: s.pending, last_pay: s.lastPay });
         if (s.lastPay && (!lastPay || s.lastPay > lastPay)) lastPay = s.lastPay;
       }
       o.payment_received_erp = matched ? rec : null;
       o.payment_pending_erp = matched ? pen : null;
+      o.bills_payment = matched ? billsPay : null;
       o.pay_status = matched
         ? (matched === (o.bill_nos || []).length && statuses.every((x) => x === "Full") ? "Full" : rec > 0 ? "Part" : "Pending")
         : null;

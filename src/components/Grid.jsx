@@ -203,6 +203,11 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
           {partyOpts.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         {(fBeat || fSalesman || fParty) && <button className="btn ghost sm" onClick={() => { setFBeat(''); setFSalesman(''); setFParty('') }}>✕ Clear</button>}
+        <span className={`filter-count ${filtered.length !== viewRows.length ? 'active' : ''}`} title="Filter ke baad kitni rows dikh rahi hain / total">
+          {filtered.length !== viewRows.length
+            ? <>🔎 <b>{filtered.length.toLocaleString('en-IN')}</b> / {viewRows.length.toLocaleString('en-IN')} rows</>
+            : <>{viewRows.length.toLocaleString('en-IN')} rows</>}
+        </span>
       </div>
       <div className="legend">
         <span><i className="dot g"></i> On-time ✔</span>
@@ -217,7 +222,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
           <thead>
             <tr>
               {visCols.map((c) => c.col_type === 'stage'
-                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 6 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
+                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 7 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
                 : <th key={c.col_key} rowSpan={2} className={c.is_custom ? 'cust-h' : ''}>{c.label}{c.is_custom ? ' ✏️' : ''}</th>)}
             </tr>
             <tr>
@@ -230,6 +235,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                   <th key={c.col_key + 'i'} className={`sub-h ${c.col_key}`}>Inv No</th>,
                 ] : []),
                 ...(c.col_key === 'stage_payment' ? [
+                  <th key={c.col_key + 'lp'} className={`sub-h ${c.col_key}`}>Last Pay</th>,
                   <th key={c.col_key + 'n'} className={`sub-h ${c.col_key}`}>F/Ups</th>,
                   <th key={c.col_key + 'x'} className={`sub-h ${c.col_key}`}>Next F/Up</th>,
                   <th key={c.col_key + 'r'} className={`sub-h ${c.col_key}`}>Remark</th>,
@@ -267,11 +273,26 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       </td>]
                     if (c.col_key === 'stage_payment') {
                       const f = fupCounts?.[o.mobile_so_no]
+                      // Last Pay chip: aakhri payment kab aayi, kaun se invoice ke against — hover par sab bills ka detail
+                      const lastPayCell = (() => {
+                        const bp = (o.bills_payment || []).filter((b) => Number(b.received) > 0)
+                        if (!bp.length) return <td key={c.col_key + '_lp'} className={`sub ${c.col_key}`}><span className="muted">—</span></td>
+                        const latest = bp.reduce((a, b) => ((b.last_pay || '') > (a.last_pay || '') ? b : a))
+                        const dt = latest.last_pay ? new Date(latest.last_pay).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''
+                        const tip = (o.bills_payment || []).map((b) =>
+                          `#${b.bill_no}: ${b.status}${Number(b.received) > 0 ? ` · ₹${Number(b.received).toLocaleString('en-IN')} aaya${b.last_pay ? ' (' + new Date(b.last_pay).toLocaleDateString('en-IN') + ')' : ''}` : ''}${Number(b.pending) > 0 ? ` · ₹${Number(b.pending).toLocaleString('en-IN')} baaki` : ''}`
+                        ).join('\n')
+                        return <td key={c.col_key + '_lp'} className={`sub ${c.col_key}`}>
+                          <button className="lastpay-chip" title={'Bill-wise payment detail:\n' + tip} onClick={() => setOpen(o)}>
+                            💰 ₹{Number(latest.received).toLocaleString('en-IN')}{dt ? ` · ${dt}` : ''} <span className="lastpay-inv">#{latest.bill_no}</span>
+                          </button>
+                        </td>
+                      })()
                       if (noFollowup(o)) {
-                        return [cell,
+                        return [cell, lastPayCell,
                           <td key={c.col_key + '_nf'} className={`sub ${c.col_key} no-fup`} colSpan={3} title="Family N = No follow-up — is account ka payment follow-up nahi karna hai">🚫 No F/Up (Family N)</td>]
                       }
-                      return [cell,
+                      return [cell, lastPayCell,
                         <td key={c.col_key + '_n'} className={`sub ${c.col_key}`}>
                           <button className="fup-cell-btn" title="Follow-up modal kholo — date + remark dalo, log dekho" onClick={() => setFupOrder(o)}>
                             📝 <span className={f?.count ? 'fup-badge' : 'muted'}>{f?.count || 0}</span>
