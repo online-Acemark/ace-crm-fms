@@ -240,3 +240,73 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .last-remark { font-size: 11px; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .remark-inp { width: 150px; }
 .cust input[type="datetime-local"] { width: 165px; }
+
+/* ===================================================== */
+/* =============== MOBILE RESPONSIVE ================== */
+/* ===================================================== */
+@media (max-width: 768px) {
+  main { padding: 10px 8px; }
+
+  /* ---- top header: 2-line compact layout ----
+     line 1: brand + actions (theme/sync/user/logout)
+     line 2: nav tabs — full width, swipe-scroll        */
+  .topbar { padding: 8px 10px; gap: 8px; row-gap: 6px; }
+  .brand { font-size: 15px; order: 1; white-space: nowrap; }
+  .top-right { order: 2; gap: 6px; }
+  .topbar nav { order: 3; width: 100%; display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 6px; scrollbar-width: none; }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .tab { padding: 8px 10px; font-size: 13px; white-space: nowrap; flex: 1; text-align: center; min-height: 38px; }
+  .btn { padding: 7px 10px; }
+  .sync-txt { display: none; } /* mobile par sirf 🔄 icon */
+  .theme-btn { padding: 6px 8px; }
+  .toast { left: 10px; right: 10px; top: auto; bottom: 14px; text-align: center; }
+
+  /* ---- KPIs + filter bar ---- */
+  .kpis { gap: 8px; }
+  .kpi { flex: 1 1 calc(25% - 8px); padding: 6px 4px; min-width: 68px; }
+  .kpi b { font-size: 16px; }
+  .kpi span { font-size: 10px; }
+  .search { order: 5; min-width: 100%; max-width: 100%; }
+  .kpis select { order: 6; flex: 1 1 calc(50% - 8px); min-width: 0; }
+  .legend { display: none; } /* mobile par jagah bachao */
+
+  /* ---- FMS grid table ---- */
+  .tbl-wrap { max-height: calc(100vh - 240px); border-radius: 8px; -webkit-overflow-scrolling: touch; }
+  .fms-tbl { font-size: 11.5px; }
+  .fms-tbl th, .fms-tbl td { padding: 5px 7px; }
+  .fms-tbl thead tr:nth-child(2) th { top: 27px; }
+  .acct { min-width: 110px; max-width: 150px; }
+  .item-cell { min-width: 120px; max-width: 170px; }
+  /* pehla column (SO No) sticky — side scroll me bhi order number dikhta rahe */
+  .fms-tbl tbody td:first-child { position: sticky; left: 0; z-index: 4; background: var(--panel); box-shadow: 2px 0 0 var(--line); }
+  .fms-tbl thead tr:first-child th:first-child { position: sticky; left: 0; z-index: 7; box-shadow: 2px 0 0 var(--line); }
+  .fms-tbl tbody tr:hover td:first-child { background: var(--hover); }
+
+  /* ---- panels / action center: andar scroll, pura page nahi ---- */
+  .panel { padding: 12px; overflow-x: auto; }
+  .action-sec .cfg-tbl { min-width: 620px; }
+  .cfg-tbl { font-size: 12px; }
+  .sec-title h3 { font-size: 14px; }
+
+  /* ---- drawer: full screen ---- */
+  .drawer { width: 100vw; padding: 14px 12px; border-left: none; }
+  .drawer-head { flex-wrap: wrap; gap: 8px; }
+  .drawer-head h2 { font-size: 15px; }
+  .head-btns { width: 100%; justify-content: space-between; }
+  .drawer-cols { grid-template-columns: 1fr; }
+  .pipe-row { grid-template-columns: 1.2fr 1fr; row-gap: 2px; font-size: 12px; }
+  .contact-grid { grid-template-columns: 1fr 1fr; }
+  .amounts { flex-wrap: wrap; gap: 10px; }
+
+  /* ---- follow-up modal: bottom sheet style ---- */
+  .modal-back { padding: 8px; align-items: flex-end; }
+  .modal { width: 100%; max-height: 92vh; border-radius: 14px 14px 0 0; padding: 14px; }
+}
+
+/* chhote phones */
+@media (max-width: 420px) {
+  .kpi { flex: 1 1 calc(50% - 8px); }
+  .brand .small { display: none; } /* "Acemark" tag chhupao */
+  .top-right { margin-left: auto; }
+  .contact-grid { grid-template-columns: 1fr; }
+}

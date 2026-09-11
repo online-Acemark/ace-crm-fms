@@ -126,7 +126,7 @@ export default function App() {
         <div className="top-right">
           <button className="btn ghost theme-btn" title={theme === 'light' ? 'Dark mode' : 'Light mode'}
             onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? '🌙' : '☀️'}</button>
-          <button className="btn primary" onClick={doSync} disabled={busy}>{busy ? '⏳ Syncing…' : '🔄 Sync ERP'}</button>
+          <button className="btn primary" onClick={doSync} disabled={busy}>{busy ? '⏳' : '🔄'}<span className="sync-txt">{busy ? ' Syncing…' : ' Sync ERP'}</span></button>
           <span className="user" title={user.email}>{user.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="" /> : user.email?.[0]?.toUpperCase()}</span>
           <button className="btn ghost" onClick={() => supabase.auth.signOut()}>Logout</button>
         </div>
