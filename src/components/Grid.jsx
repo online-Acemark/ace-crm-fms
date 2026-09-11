@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -308,7 +308,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                   if (c.is_custom) return <CustomCell key={c.col_key} order={o} col={c} onChanged={onChanged} />
                   switch (c.col_key) {
                     case 'mobile_so_no': return <td key={c.col_key}><button className="link" onClick={() => setOpen(o)}>{o.mobile_so_no}</button></td>
-                    case 'so_date': return <td key={c.col_key} className="so-date">{fmtDT(o.mobile_so_created)}</td>
+                    case 'so_date': return <td key={c.col_key} className="so-date">{fmtERP(o.mobile_so_created)}</td>
                     case 'account_name': return <td key={c.col_key} className="acct">{o.account_name}</td>
                     case 'salesman': return <td key={c.col_key}>{smOf(o) || <span className="muted">—</span>}</td>
                     case 'beat': return <td key={c.col_key}>{beatOf(o) || <span className="muted">—</span>}</td>
@@ -343,7 +343,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       if (ps.length === 1 && ps[0].mqty != null) return <td key={c.col_key} className="num">{Number(ps[0].mqty).toLocaleString('en-IN')} {ps[0].munit || ''}</td>
                       return <td key={c.col_key} className="num">{o.mobile_qty != null ? Number(o.mobile_qty).toLocaleString('en-IN') : '—'}</td>
                     }
-                    case 'bill_date': return <td key={c.col_key} className="small">{o.billing_date ? fmtDT(o.billing_date) : <span className="muted">—</span>}</td>
+                    case 'bill_date': return <td key={c.col_key} className="small">{o.billing_date ? fmtERP(o.billing_date) : <span className="muted">—</span>}</td>
                     case 'credit_date': {
                       const due = paymentDue(o.billing_date, o.credit_days)
                       return <td key={c.col_key} className="small">{due ? <>{fmtDT(due)}{o.credit_days != null && <span className="muted"> ({o.credit_days}d)</span>}</> : <span className="muted">—</span>}</td>

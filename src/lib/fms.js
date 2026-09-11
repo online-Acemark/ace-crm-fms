@@ -48,7 +48,7 @@ export function contactMissing(o) {
 export function buildStatusMsg(o, pipe) {
   const c = resolveContact(o)
   const name = c.contact_person ? `${c.contact_person} ji` : `${o.account_name}`
-  const dt = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''
+  const dt = (v) => v ? erpDate(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''
   const lines = [`Namaste ${name}`, `Aapke order (SO #${o.mobile_so_no}, ${dt(o.mobile_so_created)}) ka status:`, '']
   if (o.desp_date) {
     lines.push(`Order dispatch ho chuka hai (${dt(o.desp_date)}).`)
@@ -83,7 +83,7 @@ export function buildBillMsg(o, b) {
   const c = resolveContact(o)
   const name = c.contact_person ? `${c.contact_person} ji` : `${o.account_name}`
   const lines = [`Namaste ${name}`, '', 'Aapka bill ban gaya hai:']
-  lines.push(`Bill No: ${b.bill_no}${b.billing_date ? ` (${new Date(b.billing_date).toLocaleDateString('en-IN')})` : ''}`)
+  lines.push(`Bill No: ${b.bill_no}${b.billing_date ? ` (${erpDate(b.billing_date).toLocaleDateString('en-IN')})` : ''}`)
   if (b.amount != null) lines.push(`Amount: ₹${Number(b.amount).toLocaleString('en-IN')}`)
   if (b.qty) lines.push(`Qty: ${Number(b.qty).toLocaleString('en-IN')}`)
   if (o.credit_days != null && b.billing_date) {
@@ -272,7 +272,7 @@ function soConvertPlanned(t, plannedHours) {
 // Payment due: bill date + credit days; due din Sunday/holiday ho to agla working day
 export function paymentDue(billDate, creditDays) {
   if (!billDate || creditDays == null) return null
-  let due = new Date(new Date(billDate).getTime() + creditDays * 24 * 3600 * 1000)
+  let due = new Date(erpDate(billDate).getTime() + creditDays * 24 * 3600 * 1000)
   if (!isWorkingDay(due)) {
     const day = nextWorkingDay(due)
     day.setHours(due.getHours(), due.getMinutes(), 0, 0)
@@ -281,18 +281,30 @@ export function paymentDue(billDate, creditDays) {
   return due
 }
 
+// ---------- ERP timestamp parse ----------
+// ERP ke times IST wall-clock hote hain par DB me galat '+00' label ke saath store hain.
+// Isliye parse karte waqt timezone suffix hata do — browser local (IST) = wahi wall clock.
+// Demo ke naked strings par koi asar nahi. App ke apne timestamps (follow-up dates etc.)
+// asli UTC hain — unke liye normal d() hi use hota hai.
+export const erpDate = (v) => {
+  if (!v) return null
+  const dt = new Date(String(v).replace(/(\.\d+)?(\+00(:00)?|Z)$/i, ''))
+  return isNaN(dt) ? null : dt
+}
+export const fmtERP = (v) => fmtDT(erpDate(v))
+
 // ---------- pipeline: planned / actual / delay per stage ----------
 const H = 3600 * 1000
 const d = (v) => (v ? new Date(v) : null)
 
 export function computePipeline(o, stages, scoring) {
   const res = {}
-  let prevRef = d(o.mobile_so_created) // chain reference
+  let prevRef = erpDate(o.mobile_so_created) // chain reference
   const actualOf = {
-    so_convert: d(o.so_convert_date),
-    billing: d(o.billing_date),
-    gpout: d(o.gpout_created),
-    dispatch: d(o.desp_date),
+    so_convert: erpDate(o.so_convert_date),
+    billing: erpDate(o.billing_date),
+    gpout: erpDate(o.gpout_created),
+    dispatch: erpDate(o.desp_date),
     payment: (o.payment_complete || o.pay_status === 'Full') ? d(o.payment_date) || d(o.pay_last_date) || new Date() : null,
   }
   const now = new Date()

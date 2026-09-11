@@ -119,7 +119,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">📋 <b>CRM FMS</b> <span className="muted small">Acemark</span></div>
         <nav>
-          {[['action', 'Aaj Ke Kaam'], ['fms', 'FMS Grid'], ['score', 'Scoreboard'], ['stages', 'Stage Plan']].map(([k, l]) => (
+          {[['action', 'Today Work'], ['fms', 'FMS Grid'], ['score', 'Scoreboard'], ['stages', 'Stage Plan']].map(([k, l]) => (
             <button key={k} className={tab === k ? 'tab active' : 'tab'} onClick={() => setTab(k)}>{l}</button>
           ))}
         </nav>

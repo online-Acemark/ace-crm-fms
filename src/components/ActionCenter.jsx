@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -29,7 +29,14 @@ const SECTIONS = [
 export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   const [open, setOpen] = useState(null)
   const [fupOrder, setFupOrder] = useState(null)
+  const [q, setQ] = useState('') // SO number ya party name se filter
   const today = new Date(); today.setHours(0, 0, 0, 0)
+
+  const matches = (o) => {
+    const s = q.trim().toLowerCase()
+    if (!s) return true
+    return `${o.account_name} ${o.mobile_so_no} ${o.mobile_no || ''}`.toLowerCase().includes(s)
+  }
 
   const tasks = useMemo(() => {
     const t = { confirm: [], billing: [], dispatch: [], payment: [], contact: [] }
@@ -47,38 +54,52 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
     return t
   }, [orders, stages, scoring, today])
 
+  const filteredTasks = useMemo(() => {
+    const t = {}
+    for (const k of Object.keys(tasks)) t[k] = tasks[k].filter(({ o }) => matches(o))
+    return t
+  }, [tasks, q])
+
   const totalTasks = SECTIONS.reduce((n, s) => n + tasks[s.key].length, 0)
+  const shownTasks = SECTIONS.reduce((n, s) => n + filteredTasks[s.key].length, 0)
 
   return (
     <div className="action-page">
       <div className="action-head">
-        <h2>📌 Aaj Ke Kaam — {totalTasks} pending</h2>
+        <h2>📌 Today Work — {totalTasks} pending</h2>
         <p className="muted">Upar se neeche order me karo. Har section me likha hai KYA karna hai aur KAISE. Order number par click karo to pura detail khulega.</p>
+        <div className="action-filter">
+          <input className="search" placeholder="🔍 SO No / Party name se dhundo…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {q && <>
+            <button className="btn ghost sm" onClick={() => setQ('')}>✕ Clear</button>
+            <span className="filter-count active">🔎 {shownTasks} / {totalTasks} tasks</span>
+          </>}
+        </div>
       </div>
       {SECTIONS.map((sec) => {
-        const list = tasks[sec.key]
+        const list = filteredTasks[sec.key]
         return (
           <div key={sec.key} className="panel action-sec">
             <div className="sec-title">
               <h3>{sec.icon} {sec.title} <span className={list.length ? 'count-badge' : 'count-badge zero'}>{list.length}</span></h3>
               <p className="muted small how">Kaise: {sec.how}</p>
             </div>
-            {list.length === 0 ? <div className="all-done">✅ Sab ho gaya!</div> : (
+            {list.length === 0 ? <div className="all-done">{q && tasks[sec.key].length > 0 ? <span className="muted">🔍 filter me kuch nahi mila ({tasks[sec.key].length} hidden)</span> : '✅ Sab ho gaya!'}</div> : (
               <table className="cfg-tbl">
                 <tbody>
                   {list.slice(0, 25).map(({ o, pipe, d, fupDue }) => {
                     const c = resolveContact(o)
                     const wa = waLink(o.mobile_no, buildStatusMsg(o, pipe))
-                    const due = o.billing_date && o.credit_days != null ? new Date(new Date(o.billing_date).getTime() + o.credit_days * 864e5) : null
+                    const due = paymentDue(o.billing_date, o.credit_days)
                     return (
                       <tr key={o.mobile_so_no}>
                         <td><button className="link" onClick={() => setOpen(o)}><b>#{o.mobile_so_no}</b></button></td>
                         <td><b>{o.account_name}</b>{c.contact_person && <span className="muted"> · {c.contact_person}</span>}</td>
                         <td>{o.mobile_no && <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">📞 {o.mobile_no}</a>}</td>
                         <td className="small">
-                          {sec.key === 'confirm' && <>SO aaya: {fmtDT(o.mobile_so_created)}</>}
-                          {sec.key === 'billing' && <>Confirm hua: {fmtDT(o.so_convert_date)}</>}
-                          {sec.key === 'dispatch' && <>Bill bana: {fmtDT(o.billing_date)}</>}
+                          {sec.key === 'confirm' && <>SO aaya: {fmtERP(o.mobile_so_created)}</>}
+                          {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}</>}
+                          {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}</>}
                           {sec.key === 'payment' && (() => {
                             const overdueDays = pipe.payment?.planned ? Math.floor((Date.now() - new Date(pipe.payment.planned).getTime()) / 864e5) : 0
                             const bucket = overdueDays > 30 ? 'bkt-30' : overdueDays > 7 ? 'bkt-8' : ''
