@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { computePipeline, computeScore, fmtDelay } from '../lib/fms'
 
 export default function Scoreboard({ orders, stages, scoring }) {
+  const [q, setQ] = useState('') // account scoreboard me party/family se search
   const { accounts, stageStats } = useMemo(() => {
     const accMap = new Map()
     const stStats = {}
@@ -58,12 +59,21 @@ export default function Scoreboard({ orders, stages, scoring }) {
       </div>
       <div className="panel">
         <h2>🏆 Account Scoreboard</h2>
+        <div className="score-search">
+          <input className="search" placeholder="🔍 Party name / family se dhundo…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {q && <>
+            <button className="btn ghost sm" onClick={() => setQ('')}>✕ Clear</button>
+            <span className="filter-count active">🔎 {accounts.filter((a) => `${a.name} ${a.family || ''}`.toLowerCase().includes(q.trim().toLowerCase())).length} / {accounts.length}</span>
+          </>}
+        </div>
         <table className="cfg-tbl">
           <thead><tr><th>#</th><th>Account</th><th>Family</th><th>Orders</th><th>Business</th><th>Delayed</th><th>Pay Due</th><th>Score</th></tr></thead>
           <tbody>
-            {accounts.map((a, i) => (
+            {accounts.map((a, i) => ({ ...a, rank: i + 1 }))
+              .filter((a) => !q.trim() || `${a.name} ${a.family || ''}`.toLowerCase().includes(q.trim().toLowerCase()))
+              .map((a) => (
               <tr key={a.name}>
-                <td>{i + 1}</td>
+                <td>{a.rank}</td>
                 <td><b>{a.name}</b></td>
                 <td>{a.family || '—'}</td>
                 <td>{a.orders}</td>
