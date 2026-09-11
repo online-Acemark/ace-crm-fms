@@ -159,7 +159,11 @@ function aggregateSO(rows: any[]) {
   const out: any[] = [];
   for (const [soNo, lines] of map) {
     const first = (f: string) => lines.map((l) => l[f]).find((v) => v != null && v !== "");
-    const allHave = (f: string) => lines.every((l) => l[f] != null && l[f] !== "");
+    // SO_Qty null/0 wali lines SO convert me drop ho chuki hain (item cancel) —
+    // billing/GP out/dispatch ke completion check me unhe mat gino
+    const activeLines = lines.filter((l) => Number(l.SO_Qty) > 0);
+    const chk = activeLines.length ? activeLines : lines;
+    const allHave = (f: string) => chk.every((l) => l[f] != null && l[f] !== "");
     const maxDate = (f: string) => { const vs = lines.map((l) => l[f]).filter(Boolean); return vs.length ? vs.sort().at(-1) : null; };
     const sum = (f: string) => lines.reduce((a, l) => a + (Number(l[f]) || 0), 0);
     const billMap = new Map<string, any>();

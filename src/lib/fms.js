@@ -131,7 +131,11 @@ export function aggregateSO(rows) {
   const out = []
   for (const [soNo, lines] of map) {
     const first = (f) => lines.map((l) => l[f]).find((v) => v != null && v !== '')
-    const allHave = (f) => lines.every((l) => l[f] != null && l[f] !== '')
+    // SO_Qty null/0 wali lines SO convert me drop ho chuki hain (item cancel) —
+    // billing/GP out/dispatch ke completion check me unhe mat gino
+    const activeLines = lines.filter((l) => Number(l.SO_Qty) > 0)
+    const chk = activeLines.length ? activeLines : lines
+    const allHave = (f) => chk.every((l) => l[f] != null && l[f] !== '')
     const maxDate = (f) => {
       const vs = lines.map((l) => l[f]).filter(Boolean)
       return vs.length ? vs.sort().at(-1) : null
