@@ -205,7 +205,7 @@ function aggregateSO(rows: any[]) {
       bill_nos: [...billMap.keys()],
       inv_urls: [...billMap.values()].map((b) => b.url),
       bills: [...billMap.values()].map(({ bill_no, billing_date, amt, qty, url, products }) => ({ bill_no, billing_date, amount: amt, qty, url, products })),
-      products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit, mqty: l.MobileApp_Qty, munit: l.MasterUnit, bqty: l.BillQty })),
+      products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit, mqty: l.MobileApp_Qty, munit: l.MasterUnit, bqty: l.BillQty, bno: l.BillNo ?? null, gpno: l.GPOutNo ?? null, gpdt: l.GPOUTCreated ?? null, ddt: l.DespDate ?? null })),
     });
   }
   return out;

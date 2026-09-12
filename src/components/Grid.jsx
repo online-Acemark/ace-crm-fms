@@ -6,12 +6,16 @@ import FollowupModal from './FollowupModal'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
 
-function StageCell({ p, sk }) {
+function StageCell({ p, sk, partial }) {
   if (!p) return <td className={`stage-cell na ${sk} stg-first`} colSpan={3}>—</td>
   const cls = { ontime: 'ok', late: 'late', running: 'run', pending: 'pend', done: 'ok', na: 'na' }[p.status]
   return (<>
     <td className={`sub pln ${cls} ${sk} stg-first`}>{fmtDT(p.planned)}</td>
-    <td className={`sub act ${cls} ${sk}`}>{p.actual ? fmtDT(p.actual) : (p.status === 'running' ? '⏳ pending' : '—')}</td>
+    <td className={`sub act ${cls} ${sk}`}>
+      {p.actual ? fmtDT(p.actual)
+        : partial ? <span className="amber-t" title={`${partial.left} item ka bill abhi baaki hai`}><b>🟡 Partial</b> · {fmtERP(partial.date)}</span>
+        : (p.status === 'running' ? '⏳ pending' : '—')}
+    </td>
     <td className={`sub dly ${cls} ${sk}`}>{p.delayH != null ? (p.status === 'ontime' || p.status === 'done' ? '✔ ' : '') + fmtDelay(p.delayH) : (p.status === 'ontime' ? '✔' : p.status === 'pending' ? '·' : '—')}</td>
   </>)
 }
@@ -95,16 +99,27 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
     if (view === 'so') return rows
     if (view === 'item') {
       const out = []
-      for (const { o, pipe, score } of rows) {
+      for (const { o, score } of rows) {
         const ps = o.products?.length ? o.products : [null]
-        ps.forEach((p, i) => out.push({
-          o: {
+        ps.forEach((p, i) => {
+          // item ka apna bill/GP out/dispatch — har line apna status dikhaye, order ka nahi
+          const bill = p && p.bno != null ? (o.bills || []).find((b) => String(b.bill_no) === String(p.bno)) : null
+          const active = p && Number(p.qty) > 0
+          const activeUnbilled = active && !bill
+          const hasGp = p && p.gpno != null
+          const bo = {
             ...o, _billKey: o.mobile_so_no + '_item' + i,
             products: p ? [p] : [], line_count: 1,
             so_qty: p?.qty ?? null, pending_qty: p?.pending ?? null,
-          },
-          pipe, score,
-        }))
+            billing_date: bill ? bill.billing_date : (activeUnbilled ? null : o.billing_date),
+            bill_nos: bill ? [bill.bill_no] : (activeUnbilled ? [] : o.bill_nos),
+            inv_urls: bill ? [bill.url] : (activeUnbilled ? [] : o.inv_urls),
+            bills: bill ? [bill] : (activeUnbilled ? [] : o.bills),
+            gpout_created: hasGp ? (p.gpdt ?? o.gpout_created) : (active ? null : o.gpout_created),
+            desp_date: hasGp && p.ddt ? p.ddt : (active ? null : o.desp_date),
+          }
+          out.push({ o: bo, pipe: computePipeline(bo, stages, scoring), score })
+        })
       }
       return out
     }
@@ -222,7 +237,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
           <thead>
             <tr>
               {visCols.map((c) => c.col_type === 'stage'
-                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 7 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
+                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 7 : c.col_key === 'stage_dispatch' ? 4 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
                 : <th key={c.col_key} rowSpan={2} className={c.is_custom ? 'cust-h' : ''}>{c.label}{c.is_custom ? ' ✏️' : ''}</th>)}
             </tr>
             <tr>
@@ -234,6 +249,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                   <th key={c.col_key + 'q'} className={`sub-h ${c.col_key}`}>Billed Qty</th>,
                   <th key={c.col_key + 'i'} className={`sub-h ${c.col_key}`}>Inv No</th>,
                 ] : []),
+                ...(c.col_key === 'stage_dispatch' ? [<th key={c.col_key + 's'} className={`sub-h ${c.col_key}`}>Status</th>] : []),
                 ...(c.col_key === 'stage_payment' ? [
                   <th key={c.col_key + 'lp'} className={`sub-h ${c.col_key}`}>Last Pay</th>,
                   <th key={c.col_key + 'n'} className={`sub-h ${c.col_key}`}>F/Ups</th>,
@@ -248,10 +264,31 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
               <tr key={o._billKey || o.mobile_so_no}>
                 {visCols.map((c) => {
                   if (c.col_type === 'stage') {
-                    const cell = <StageCell key={c.col_key} p={pipe[stageMap[c.col_key]?.stage_key]} sk={c.col_key} />
+                    // partial: kuch items ka kaam ho chuka par saare ka nahi — Act me 🟡 Partial + latest time
+                    const partial = (() => {
+                      const ps = o.products || []
+                      if (c.col_key === 'stage_billing' && !o.billing_date && (o.bills || []).length) {
+                        return { date: (o.bills || []).map((b) => b.billing_date).filter(Boolean).sort().at(-1), left: ps.filter((p) => Number(p.qty) > 0 && p.bno == null).length }
+                      }
+                      if (c.col_key === 'stage_gpout' && !o.gpout_created) {
+                        const done = ps.filter((p) => p.gpno != null)
+                        if (done.length) return { date: done.map((p) => p.gpdt).filter(Boolean).sort().at(-1), left: ps.filter((p) => Number(p.qty) > 0 && p.gpno == null).length }
+                      }
+                      if (c.col_key === 'stage_dispatch' && !o.desp_date) {
+                        const done = ps.filter((p) => p.gpno != null && p.ddt)
+                        if (done.length) return { date: done.map((p) => p.ddt).filter(Boolean).sort().at(-1), left: ps.filter((p) => Number(p.qty) > 0 && !(p.gpno != null && p.ddt)).length }
+                      }
+                      return null
+                    })()
+                    const cell = <StageCell key={c.col_key} p={pipe[stageMap[c.col_key]?.stage_key]} sk={c.col_key} partial={partial} />
                     if (c.col_key === 'stage_billing') return [cell,
                       <td key={c.col_key + '_bq'} className={`sub num ${c.col_key}`}>
-                        {(() => { const ps = o.products || []; const v = ps.length === 1 && ps[0].bqty != null ? ps[0].bqty : o.bill_qty; return v != null ? Number(v).toLocaleString('en-IN') : '—' })()}
+                        {(() => {
+                          const ps = o.products || []
+                          // item view: us line ki apni billed qty (bill nahi bana to 0) — order ka total fallback GALAT tha
+                          const v = ps.length === 1 ? (ps[0].bqty ?? 0) : o.bill_qty
+                          return v != null ? Number(v).toLocaleString('en-IN') : '—'
+                        })()}
                       </td>,
                       <td key={c.col_key + '_inv'} className={`sub inv-col ${c.col_key}`}>
                         {(() => {
@@ -271,6 +308,23 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                           ))
                         })()}
                       </td>]
+                    if (c.col_key === 'stage_dispatch') {
+                      // Dispatch Status: qty vs pending — Full / Partial (X baaki) / Excess (+X extra, amber)
+                      const ps = o.products || []
+                      const single = ps.length === 1
+                      const qty = single ? (Number(ps[0].qty) || 0) : (Number(o.so_qty) || 0)
+                      const pend = single ? (Number(ps[0].pending ?? 0)) : (Number(o.pending_qty ?? 0))
+                      const started = single ? (ps[0].gpno != null || qty - pend > 0) : (ps.some((p) => p.gpno != null) || qty - pend > 0)
+                      let badge = <span className="muted">—</span>
+                      if (qty > 0 && started) {
+                        if (pend < 0) badge = <span className="ds-badge ds-exc" title={`Order se ${Math.abs(pend)} zyada dispatch hua`}>⚠ Excess +{Math.abs(pend)}</span>
+                        else if (pend === 0) badge = <span className="ds-badge ds-full">✔ Full</span>
+                        else if (pend < qty) badge = <span className="ds-badge ds-part" title={`${pend} qty abhi jani baaki`}>Partial · {pend} baaki</span>
+                      } else if (qty > 0 && pend < 0) {
+                        badge = <span className="ds-badge ds-exc">⚠ Excess +{Math.abs(pend)}</span>
+                      }
+                      return [cell, <td key={c.col_key + '_st'} className={`sub ${c.col_key}`}>{badge}</td>]
+                    }
                     if (c.col_key === 'stage_payment') {
                       const f = fupCounts?.[o.mobile_so_no]
                       // Last Pay chip: aakhri payment kab aayi, kaun se invoice ke against — hover par sab bills ka detail
@@ -349,10 +403,18 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       return <td key={c.col_key} className="small">{due ? <>{fmtDT(due)}{o.credit_days != null && <span className="muted"> ({o.credit_days}d)</span>}</> : <span className="muted">—</span>}</td>
                     }
                     case 'pay_status': {
-                      if (!o.pay_status) return <td key={c.col_key} className="muted">—</td>
-                      const pend = o.payment_pending_erp != null ? Number(o.payment_pending_erp) : null
-                      if (o.pay_status === 'Full') return <td key={c.col_key}><span className="pay-badge pay-full">✔ Full</span></td>
-                      if (o.pay_status === 'Part') return <td key={c.col_key}><span className="pay-badge pay-part">Part{pend ? ` · ₹${pend.toLocaleString('en-IN')} baaki` : ''}</span></td>
+                      const ps = o.products || []
+                      let status = o.pay_status
+                      let pend = o.payment_pending_erp != null ? Number(o.payment_pending_erp) : null
+                      // item view: us item ke APNE bill ka payment status
+                      if (ps.length === 1) {
+                        if (ps[0].bno == null) return <td key={c.col_key} className="muted">—</td>
+                        const bp = (o.bills_payment || []).find((b) => String(b.bill_no) === String(ps[0].bno))
+                        if (bp) { status = bp.status; pend = Number(bp.pending) || null }
+                      }
+                      if (!status) return <td key={c.col_key} className="muted">—</td>
+                      if (status === 'Full') return <td key={c.col_key}><span className="pay-badge pay-full">✔ Full</span></td>
+                      if (status === 'Part') return <td key={c.col_key}><span className="pay-badge pay-part">Part{pend ? ` · ₹${pend.toLocaleString('en-IN')} baaki` : ''}</span></td>
                       return <td key={c.col_key}><span className="pay-badge pay-pend">Pending{pend ? ` · ₹${pend.toLocaleString('en-IN')}` : ''}</span></td>
                     }
                     case 'stock': {
