@@ -152,16 +152,22 @@ main { padding: 16px 18px; flex: 1; min-height: 0; overflow-y: auto; }
 .fup-remark { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: 11.5px; }
 
 /* ===== stage-wise highlight: har step apna rang ===== */
-td.stage_so_convert, th.sub-h.stage_so_convert { background: rgba(59,130,246,.09); }
-td.stage_billing,    th.sub-h.stage_billing    { background: rgba(168,85,247,.09); }
-td.stage_gpout,      th.sub-h.stage_gpout      { background: rgba(20,184,166,.09); }
-td.stage_dispatch,   th.sub-h.stage_dispatch   { background: rgba(245,158,11,.09); }
-td.stage_payment,    th.sub-h.stage_payment    { background: rgba(34,197,94,.09); }
-th.stage-h.stage_so_convert { background: rgba(59,130,246,.22); color: var(--stage-h-confirm-t); }
-th.stage-h.stage_billing    { background: rgba(168,85,247,.22); color: var(--stage-h-billing-t); }
-th.stage-h.stage_gpout      { background: rgba(20,184,166,.22); color: var(--stage-h-gpout-t); }
-th.stage-h.stage_dispatch   { background: rgba(245,158,11,.22); color: var(--stage-h-dispatch-t); }
-th.stage-h.stage_payment    { background: rgba(34,197,94,.22); color: var(--stage-h-payment-t); }
+td.stage_so_convert { background: rgba(59,130,246,.09); }
+td.stage_billing    { background: rgba(168,85,247,.09); }
+td.stage_gpout      { background: rgba(20,184,166,.09); }
+td.stage_dispatch   { background: rgba(245,158,11,.09); }
+td.stage_payment    { background: rgba(34,197,94,.09); }
+/* headers sticky hain — SOLID background zaroori, warna neeche ki rows jhalakti hain */
+th.sub-h.stage_so_convert { background: color-mix(in srgb, #3b82f6 9%, var(--panel2)); }
+th.sub-h.stage_billing    { background: color-mix(in srgb, #a855f7 9%, var(--panel2)); }
+th.sub-h.stage_gpout      { background: color-mix(in srgb, #14b8a6 9%, var(--panel2)); }
+th.sub-h.stage_dispatch   { background: color-mix(in srgb, #f59e0b 9%, var(--panel2)); }
+th.sub-h.stage_payment    { background: color-mix(in srgb, #22c55e 9%, var(--panel2)); }
+th.stage-h.stage_so_convert { background: color-mix(in srgb, #3b82f6 22%, var(--panel2)); color: var(--stage-h-confirm-t); }
+th.stage-h.stage_billing    { background: color-mix(in srgb, #a855f7 22%, var(--panel2)); color: var(--stage-h-billing-t); }
+th.stage-h.stage_gpout      { background: color-mix(in srgb, #14b8a6 22%, var(--panel2)); color: var(--stage-h-gpout-t); }
+th.stage-h.stage_dispatch   { background: color-mix(in srgb, #f59e0b 22%, var(--panel2)); color: var(--stage-h-dispatch-t); }
+th.stage-h.stage_payment    { background: color-mix(in srgb, #22c55e 22%, var(--panel2)); color: var(--stage-h-payment-t); }
 .stg-first { border-left: 2px solid var(--stg-sep) !important; }
 th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 

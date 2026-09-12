@@ -6,13 +6,16 @@ import FollowupModal from './FollowupModal'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
 
-function StageCell({ p, sk, partial }) {
+function StageCell({ p, sk, partial, actAlert }) {
   if (!p) return <td className={`stage-cell na ${sk} stg-first`} colSpan={3}>—</td>
   const cls = { ontime: 'ok', late: 'late', running: 'run', pending: 'pend', done: 'ok', na: 'na' }[p.status]
   return (<>
     <td className={`sub pln ${cls} ${sk} stg-first`}>{fmtDT(p.planned)}</td>
     <td className={`sub act ${cls} ${sk}`}>
-      {p.actual ? fmtDT(p.actual)
+      {p.actual
+        ? (actAlert
+          ? <span className="red-t" title="⚠ Dispatch ki date GP Out se PEHLE ki hai — ERP data check karo"><b>{fmtDT(p.actual)}</b></span>
+          : fmtDT(p.actual))
         : partial ? <span className="amber-t" title={`${partial.left} item ka bill abhi baaki hai`}><b>🟡 Partial</b> · {fmtERP(partial.date)}</span>
         : (p.status === 'running' ? '⏳ pending' : '—')}
     </td>
@@ -280,7 +283,14 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       }
                       return null
                     })()
-                    const cell = <StageCell key={c.col_key} p={pipe[stageMap[c.col_key]?.stage_key]} sk={c.col_key} partial={partial} />
+                    // GP Out red alert: dispatch actual ki DATE gp out actual se pehle ho to data gadbad hai
+                    const gpRed = c.col_key === 'stage_gpout' && (() => {
+                      const g = pipe.gpout?.actual, dd = pipe.dispatch?.actual
+                      if (!g || !dd) return false
+                      const day = (x) => x.getFullYear() * 10000 + (x.getMonth() + 1) * 100 + x.getDate()
+                      return day(dd) < day(g)
+                    })()
+                    const cell = <StageCell key={c.col_key} p={pipe[stageMap[c.col_key]?.stage_key]} sk={c.col_key} partial={partial} actAlert={gpRed} />
                     if (c.col_key === 'stage_billing') return [cell,
                       <td key={c.col_key + '_bq'} className={`sub num ${c.col_key}`}>
                         {(() => {

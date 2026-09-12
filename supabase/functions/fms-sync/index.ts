@@ -321,6 +321,13 @@ Deno.serve(async () => {
 
     const aggregated = aggregateSO(raw);
     const exMap = new Map((existing || []).map((e: any) => [e.mobile_so_no, e]));
+
+    // ---- daily scoreboard snapshot ke accumulators (fms_score_daily) ----
+    const stageStats: Record<string, any> = {};
+    for (const st of stages.filter((s: any) => s.active)) stageStats[st.stage_key] = { name: st.stage_name, ontime: 0, late: 0, open: 0 };
+    const smStats: Record<string, any> = {};
+    let scoreSum = 0, scoreN = 0, outstandingSum = 0;
+
     const payload = aggregated.map((o) => {
       // ERP payment data: order ke har bill ka summary jodkar
       let rec = 0, pen = 0, matched = 0, lastPay: string | null = null;
@@ -352,7 +359,26 @@ Deno.serve(async () => {
       const pipe = computePipeline(merged, stages, scoring);
       const delays: Record<string, number> = {};
       for (const k of Object.keys(pipe)) if (pipe[k].delayH != null) delays[k] = Math.round(pipe[k].delayH * 100) / 100;
-      return { ...o, delays, score: computeScore(pipe, scoring), synced_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      const scoreVal = computeScore(pipe, scoring);
+
+      // snapshot accumulation
+      for (const k of Object.keys(pipe)) {
+        const p = pipe[k]; const st = stageStats[k]; if (!st) continue;
+        if (p.status === "ontime" || p.status === "done") st.ontime++;
+        else if (p.status === "late") st.late++;
+        else if (p.status === "running") st.open++;
+      }
+      const smKey = o.salesman || "—";
+      const sm = smStats[smKey] || (smStats[smKey] = { orders: 0, business: 0, score_sum: 0, score_n: 0, delayed: 0, overdue_amt: 0 });
+      sm.orders++; sm.business += Number(o.sorder_amount) || 0;
+      if (scoreVal != null) { sm.score_sum += scoreVal; sm.score_n++; scoreSum += scoreVal; scoreN++; }
+      if (Object.values(pipe).some((p: any) => p.status === "late" || p.status === "running")) sm.delayed++;
+      if (pipe.payment?.status === "running" && !merged.payment_complete) {
+        const pend = o.payment_pending_erp != null ? Number(o.payment_pending_erp) : (Number(o.bill_net_amount) || 0);
+        sm.overdue_amt += pend; outstandingSum += pend;
+      }
+
+      return { ...o, delays, score: scoreVal, synced_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     });
 
     await sb("fms_orders?on_conflict=mobile_so_no", {
@@ -360,6 +386,29 @@ Deno.serve(async () => {
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify(payload),
     });
+
+    // ---- daily snapshot upsert: din bhar refresh hota hai, raat ka aakhri sync = us din ka final ----
+    try {
+      const salesmen: Record<string, any> = {};
+      for (const [k, v] of Object.entries(smStats)) {
+        salesmen[k] = { orders: v.orders, business: Math.round(v.business), avg: v.score_n ? Math.round(v.score_sum / v.score_n) : null, delayed: v.delayed, overdue_amt: Math.round(v.overdue_amt) };
+      }
+      const stagesOut: Record<string, any> = {};
+      for (const [k, v] of Object.entries(stageStats)) {
+        const denom = v.ontime + v.late + v.open;
+        stagesOut[k] = { ...v, pct: denom ? Math.round((v.ontime / denom) * 100) : null };
+      }
+      await sb("fms_score_daily?on_conflict=day", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify([{
+          day: ymd(nowIST()),
+          stages: stagesOut,
+          salesmen,
+          totals: { orders: payload.length, avg_score: scoreN ? Math.round(scoreSum / scoreN) : null, outstanding: Math.round(outstandingSum) },
+        }]),
+      });
+    } catch (_e) { /* snapshot fail hone se sync nahi rukta */ }
 
     return new Response(JSON.stringify({ ok: true, synced: payload.length, at: new Date().toISOString() }), {
       headers: { "Content-Type": "application/json" },
