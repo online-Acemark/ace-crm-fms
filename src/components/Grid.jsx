@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid, stagePartial } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -8,7 +8,7 @@ const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN',
 
 function StageCell({ p, sk, partial, actAlert }) {
   if (!p) return <td className={`stage-cell na ${sk} stg-first`} colSpan={3}>—</td>
-  const cls = { ontime: 'ok', late: 'late', running: 'run', pending: 'pend', done: 'ok', na: 'na' }[p.status]
+  const cls = { ontime: 'ok', late: 'late', running: 'run', pending: 'pend', done: 'ok', na: 'na', partial: 'pend' }[p.status]
   return (<>
     <td className={`sub pln ${cls} ${sk} stg-first`}>{fmtDT(p.planned)}</td>
     <td className={`sub act ${cls} ${sk}`}>
@@ -16,10 +16,11 @@ function StageCell({ p, sk, partial, actAlert }) {
         ? (actAlert
           ? <span className="red-t" title="⚠ Dispatch ki date GP Out se PEHLE ki hai — ERP data check karo"><b>{fmtDT(p.actual)}</b></span>
           : fmtDT(p.actual))
-        : partial ? <span className="amber-t" title={`${partial.left} item ka bill abhi baaki hai`}><b>🟡 Partial</b> · {fmtERP(partial.date)}</span>
-        : (p.status === 'running' ? '⏳ pending' : '—')}
+        : partial ? <span className="amber-t" title={`${partial.left} item ka kaam abhi baaki hai — partial me delay count nahi hota`}><b>🟡 Partial</b> · {fmtERP(partial.date)}</span>
+        : (p.status === 'running' ? '⏳ pending' : p.status === 'partial' ? '⏳ pending' : '—')}
     </td>
-    <td className={`sub dly ${cls} ${sk}`}>{p.delayH != null ? (p.status === 'ontime' || p.status === 'done' ? '✔ ' : '') + fmtDelay(p.delayH) : (p.status === 'ontime' ? '✔' : p.status === 'pending' ? '·' : '—')}</td>
+    {/* partial me delay BLANK — count nahi hota */}
+    <td className={`sub dly ${cls} ${sk}`}>{p.status === 'partial' ? '' : p.delayH != null ? (p.status === 'ontime' || p.status === 'done' ? '✔ ' : '') + fmtDelay(p.delayH) : (p.status === 'ontime' ? '✔' : p.status === 'pending' ? '·' : '—')}</td>
   </>)
 }
 
@@ -120,6 +121,8 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
             bills: bill ? [bill] : (activeUnbilled ? [] : o.bills),
             gpout_created: hasGp ? (p.gpdt ?? o.gpout_created) : (active ? null : o.gpout_created),
             desp_date: hasGp && p.ddt ? p.ddt : (active ? null : o.desp_date),
+            // order partial hai to uske item rows par bhi delay blank rahe
+            _stagePartial: { billing: stagePartial(o, 'billing'), gpout: stagePartial(o, 'gpout'), dispatch: stagePartial(o, 'dispatch') },
           }
           out.push({ o: bo, pipe: computePipeline(bo, stages, scoring), score })
         })

@@ -297,6 +297,17 @@ export const erpDate = (v) => {
 }
 export const fmtERP = (v) => fmtDT(erpDate(v))
 
+// partial = kuch active items ka kaam ho chuka, kuch baaki —
+// aise stage ka DELAY COUNT NAHI hota (blank), score me bhi nahi ginta
+export function stagePartial(o, key) {
+  if (o._stagePartial && key in o._stagePartial) return !!o._stagePartial[key]
+  const ps = o.products || []
+  if (key === 'billing') return !o.billing_date && ((o.bills || []).length > 0 || ps.some((p) => p.bno != null))
+  if (key === 'gpout') return !o.gpout_created && ps.some((p) => p.gpno != null)
+  if (key === 'dispatch') return !o.desp_date && ps.some((p) => p.gpno != null && p.ddt)
+  return false
+}
+
 // ---------- pipeline: planned / actual / delay per stage ----------
 const H = 3600 * 1000
 const d = (v) => (v ? new Date(v) : null)
@@ -339,6 +350,8 @@ export function computePipeline(o, stages, scoring) {
       if (actual) {
         delayH = Math.max(0, (actual - planned) / H)
         status = delayH <= (scoring?.grace_hours ?? 1) ? 'ontime' : 'late'
+      } else if (stagePartial(o, st.stage_key)) {
+        status = 'partial' // kuch items ho gaye — delay count nahi, blank
       } else if (now > planned) {
         delayH = (now - planned) / H
         status = 'running' // still open & already late
@@ -360,7 +373,7 @@ export function computeScore(pipe, scoring) {
   let wsum = 0, total = 0, counted = 0
   for (const k of Object.keys(pipe)) {
     const p = pipe[k]
-    if (p.status === 'na' || p.status === 'pending') continue
+    if (p.status === 'na' || p.status === 'pending' || p.status === 'partial') continue
     let pts
     if (p.status === 'ontime' || (p.status === 'done' && !p.delayH)) pts = s.on_time_points
     else pts = Math.min(s.on_time_points, Math.max(s.min_points, s.on_time_points - (p.delayH - s.grace_hours) * s.penalty_per_hour))

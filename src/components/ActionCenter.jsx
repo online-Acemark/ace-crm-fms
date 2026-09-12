@@ -43,8 +43,8 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
     for (const o of orders) {
       const pipe = computePipeline(o, stages, scoring)
       if (!o.so_convert_date) t.confirm.push({ o, pipe, d: pipe.so_convert?.delayH })
-      else if (!o.billing_date && (pipe.billing?.status === 'running')) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
-      if (o.billing_date && !o.desp_date && ['running', 'pending'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
+      else if (!o.billing_date && ['running', 'partial'].includes(pipe.billing?.status)) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
+      if (o.billing_date && !o.desp_date && ['running', 'pending', 'partial'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
       const fupDue = o.next_followup_date && new Date(o.next_followup_date) <= new Date()
       // Family N = No follow-up — payment list me mat dikhao; ERP Full-paid bhi bahar
       if (!isPaid(o) && !noFollowup(o) && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })

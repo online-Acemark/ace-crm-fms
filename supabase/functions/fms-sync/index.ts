@@ -211,6 +211,15 @@ function aggregateSO(rows: any[]) {
   return out;
 }
 
+// partial = kuch active items ka kaam ho chuka, kuch baaki — delay count nahi hota, score me nahi ginta
+function stagePartialSrv(o: any, key: string) {
+  const ps = o.products || [];
+  if (key === "billing") return !o.billing_date && ((o.bills || []).length > 0 || ps.some((p: any) => p.bno != null));
+  if (key === "gpout") return !o.gpout_created && ps.some((p: any) => p.gpno != null);
+  if (key === "dispatch") return !o.desp_date && ps.some((p: any) => p.gpno != null && p.ddt);
+  return false;
+}
+
 function computePipeline(o: any, stages: any[], scoring: any) {
   const res: Record<string, any> = {};
   let prevRef = d(o.mobile_so_created);
@@ -248,6 +257,8 @@ function computePipeline(o: any, stages: any[], scoring: any) {
       if (actual) {
         delayH = Math.max(0, (actual.getTime() - planned.getTime()) / H);
         status = delayH <= (scoring?.grace_hours ?? 1) ? "ontime" : "late";
+      } else if (stagePartialSrv(o, st.stage_key)) {
+        status = "partial"; // delay blank
       } else if (now > planned) {
         delayH = (now.getTime() - planned.getTime()) / H;
         status = "running";
@@ -269,7 +280,7 @@ function computeScore(pipe: Record<string, any>, scoring: any) {
   let wsum = 0, total = 0, counted = 0;
   for (const k of Object.keys(pipe)) {
     const p = pipe[k];
-    if (p.status === "na" || p.status === "pending") continue;
+    if (p.status === "na" || p.status === "pending" || p.status === "partial") continue;
     let pts;
     if (p.status === "ontime" || (p.status === "done" && !p.delayH)) pts = s.on_time_points;
     else pts = Math.min(s.on_time_points, Math.max(s.min_points, s.on_time_points - (p.delayH - s.grace_hours) * s.penalty_per_hour));
