@@ -1,0 +1,69 @@
+[
+  {
+    "party_name": "Demo Traders (sample)",
+    "mobile": "9876543210",
+    "salesman": "Demo Salesman",
+    "beat": "Demo Beat",
+    "city": "Raipur",
+    "total_pending": 452000,
+    "oldest_od": 210,
+    "bill_count": 4,
+    "credit_days": 30,
+    "credit_limit": 300000,
+    "last_pay_amt": 50000,
+    "last_pay_date": "2026-08-20",
+    "aging": { "b0_30": 52000, "b31_60": 0, "b61_90": 100000, "b91_120": 0, "b121_150": 0, "b151_180": 0, "b180p": 300000 },
+    "bills": [
+      { "vno": "AS/S/25-26/1001", "company": "Acemark Stationers", "date": "2026-02-10", "days": 219, "od": 210, "amt": 300000, "pending": 300000, "bilty": "BLT-401", "pdc_rcpt": null, "pdc_date": null, "notes": "2 baar promise fail hua" },
+      { "vno": "AS/S/26-27/0088", "company": "Acemark Stationers", "date": "2026-06-15", "days": 94, "od": 64, "amt": 100000, "pending": 100000, "bilty": null, "pdc_rcpt": null, "pdc_date": null, "notes": null },
+      { "vno": "AM/S/26-27/0031", "company": "Acemark Marketing", "date": "2026-08-25", "days": 23, "od": 0, "amt": 32000, "pending": 32000, "bilty": null, "pdc_rcpt": null, "pdc_date": null, "notes": null },
+      { "vno": "AS/S/26-27/0140", "company": "Acemark Stationers", "date": "2026-09-05", "days": 12, "od": 0, "amt": 20000, "pending": 20000, "bilty": "BLT-512", "pdc_rcpt": null, "pdc_date": null, "notes": null }
+    ],
+    "has_pdc": false,
+    "next_followup_date": "2026-09-16T11:00:00+05:30",
+    "synced_at": "2026-09-17T09:00:00Z"
+  },
+  {
+    "party_name": "Sample Book Depot",
+    "mobile": "9123456780",
+    "salesman": "Demo Salesman",
+    "beat": "Demo Beat",
+    "city": "Bhilai",
+    "total_pending": 185000,
+    "oldest_od": 45,
+    "bill_count": 2,
+    "credit_days": 21,
+    "credit_limit": 500000,
+    "last_pay_amt": 90000,
+    "last_pay_date": "2026-09-01",
+    "aging": { "b0_30": 60000, "b31_60": 125000, "b61_90": 0, "b91_120": 0, "b121_150": 0, "b151_180": 0, "b180p": 0 },
+    "bills": [
+      { "vno": "AS/S/26-27/0119", "company": "Acemark Stationers", "date": "2026-07-12", "days": 67, "od": 45, "amt": 125000, "pending": 125000, "bilty": null, "pdc_rcpt": "PDC-77", "pdc_date": "2026-09-25", "notes": "cheque mila hai, 25 ko lagega" },
+      { "vno": "AS/S/26-27/0155", "company": "Acemark Stationers", "date": "2026-09-02", "days": 15, "od": 0, "amt": 60000, "pending": 60000, "bilty": null, "pdc_rcpt": null, "pdc_date": null, "notes": null }
+    ],
+    "has_pdc": true,
+    "next_followup_date": "2026-09-25T11:00:00+05:30",
+    "synced_at": "2026-09-17T09:00:00Z"
+  },
+  {
+    "party_name": "Example Stationery Mart",
+    "mobile": "9012345678",
+    "salesman": "Demo Salesman 2",
+    "beat": "City Beat",
+    "city": "Durg",
+    "total_pending": 38000,
+    "oldest_od": 12,
+    "bill_count": 1,
+    "credit_days": 30,
+    "credit_limit": 200000,
+    "last_pay_amt": 42000,
+    "last_pay_date": "2026-09-10",
+    "aging": { "b0_30": 38000, "b31_60": 0, "b61_90": 0, "b91_120": 0, "b121_150": 0, "b151_180": 0, "b180p": 0 },
+    "bills": [
+      { "vno": "AS/S/26-27/0162", "company": "Acemark Stationers", "date": "2026-09-04", "days": 13, "od": 12, "amt": 38000, "pending": 38000, "bilty": null, "pdc_rcpt": null, "pdc_date": null, "notes": null }
+    ],
+    "has_pdc": false,
+    "next_followup_date": null,
+    "synced_at": "2026-09-17T09:00:00Z"
+  }
+]

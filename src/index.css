@@ -320,38 +320,76 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .cust input[type="datetime-local"] { width: 165px; }
 
 /* ================= Collection tab ================= */
-.coll-kpis { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-.kpi-chip { font-size: 12.5px; padding: 6px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
-.kpi-chip.red { color: var(--red); border-color: var(--red); }
-.kpi-chip.amber { color: var(--amber); border-color: var(--amber); }
+/* pehli baar dikhne wali help patti */
+.coll-help { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding: 9px 14px; border-radius: 10px; font-size: 13px; background: color-mix(in srgb, var(--blue, #4a90d9) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--blue, #4a90d9) 35%, var(--line)); }
+.coll-help .btn { margin-left: auto; }
+
+/* KPI cards — click karne par filter lag jata hai */
+.coll-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.kpi-card { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 9px 14px; border-radius: 12px; background: var(--panel); border: 1.5px solid var(--line); cursor: pointer; color: inherit; font: inherit; text-align: left; min-width: 130px; }
+.kpi-card b { font-size: 17px; }
+.kpi-card span { font-size: 11.5px; color: var(--muted); }
+.kpi-card:hover { border-color: var(--blue, #4a90d9); }
+.kpi-card.active { border-color: var(--blue, #4a90d9); background: color-mix(in srgb, var(--blue, #4a90d9) 10%, var(--panel)); }
+.kpi-card.red b { color: var(--red); }
+.kpi-card.due b { color: var(--amber); }
+
+/* ek-click preset chips */
+.coll-presets { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+.preset-chip { padding: 6px 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-size: 12.5px; color: inherit; white-space: nowrap; }
+.preset-chip:hover { border-color: var(--blue, #4a90d9); }
+.preset-chip.active { background: var(--blue, #4a90d9); border-color: var(--blue, #4a90d9); color: #fff; font-weight: 700; }
+
 .coll-filters select { padding: 8px 10px; }
-.coll-filters .chk { display: flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .coll-list { padding: 0; overflow-x: auto; }
-.coll-tbl { width: 100%; min-width: 980px; }
+.coll-tbl { width: 100%; min-width: 1020px; }
 .coll-tbl th { white-space: nowrap; }
 .coll-tbl td { vertical-align: top; }
 .th-sort { font-weight: 700; color: inherit; }
+.coll-row { cursor: pointer; }
+.coll-row:hover td { background: var(--hover); }
 .coll-row.open td { background: var(--hover); }
-.aging-chips { display: flex; gap: 4px; flex-wrap: wrap; max-width: 260px; }
+.coll-party { white-space: nowrap; }
+
+/* priority badge — naya banda isi se samjhe kise pehle pakadna hai */
+.pr-badge { display: inline-block; font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 12px; white-space: nowrap; }
+.pr-badge.pr-due { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--amber); border: 1px solid var(--amber); }
+.pr-badge.pr-hot { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); border: 1px solid var(--red); }
+.pr-badge.pr-warm { background: color-mix(in srgb, var(--amber) 12%, transparent); color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 60%, transparent); }
+.pr-badge.pr-mild { color: var(--muted); border: 1px solid var(--line); }
+.pr-badge.pr-ok { color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 50%, transparent); }
+
+.aging-chips { display: flex; gap: 4px; flex-wrap: wrap; max-width: 240px; }
 .aging-chips .age-chip { margin-left: 0; }
 .age-chip.bkt-ok { color: var(--green); border-color: var(--green); }
 .limit-bar-wrap { display: flex; align-items: center; gap: 6px; min-width: 110px; }
 .limit-bar { flex: 1; height: 7px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; min-width: 60px; }
 .limit-fill { height: 100%; background: var(--green); }
 .limit-fill.over { background: var(--red); }
-.coll-detail-row > td { background: var(--panel); padding: 12px 14px; }
-.coll-detail { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+.coll-actions { white-space: nowrap; }
+.coll-actions .btn, .coll-actions .wa-btn { margin-right: 4px; }
+
+/* expand hone par: pehle "kya karna hai" (3 step), phir bills */
+.coll-detail-row > td { background: var(--panel); padding: 14px 16px; cursor: default; }
+.coll-detail { display: flex; flex-direction: column; gap: 16px; }
 .coll-detail h4 { margin: 0 0 8px; font-size: 13px; }
+.coll-steps { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
+.coll-step-btns { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; margin-top: 8px; }
+.coll-step { display: flex; gap: 10px; align-items: flex-start; }
+.step-num { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--blue, #4a90d9); color: #fff; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.step-actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.step-form { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.step-form input { width: 100%; }
+/* .cfg-tbl ka 70px number-input rule yahan override karo (detail table ke andar hai) */
+.coll-detail input[type="number"] { width: 100%; }
+.coll-fup { display: grid; grid-template-columns: 1.8fr 1fr; gap: 16px; }
+.fup-log { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
+.fup-log-item { font-size: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 5px; }
 .tbl-wrap-inner { overflow-x: auto; }
-.coll-bill-tbl { font-size: 12px; min-width: 640px; }
+.coll-bill-tbl { font-size: 12px; min-width: 680px; }
 .coll-bill-tbl th { text-align: left; }
 .coll-old td { background: color-mix(in srgb, var(--red) 7%, transparent); }
 .coll-notes { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.coll-fup-form { display: flex; flex-direction: column; gap: 7px; }
-.coll-fup-form input { width: 100%; }
-.coll-fup-form label { display: flex; flex-direction: column; gap: 3px; }
-.fup-log { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
-.fup-log-item { font-size: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 5px; }
 
 /* ===================================================== */
 /* =============== MOBILE RESPONSIVE ================== */
@@ -414,9 +452,14 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
   .amounts { flex-wrap: wrap; gap: 10px; }
 
   /* ---- collection tab ---- */
-  .coll-detail { grid-template-columns: 1fr; }
-  .coll-tbl { min-width: 860px; }
-  .kpi-chip { font-size: 11.5px; padding: 5px 9px; }
+  /* detail panel table ke horizontal scroll ke saath na bhage — screen par tika rahe */
+  .coll-detail { position: sticky; left: 8px; max-width: calc(100vw - 50px); }
+  .coll-fup { grid-template-columns: 1fr; }
+  .coll-step-btns { grid-template-columns: 1fr; gap: 10px; }
+  .coll-tbl { min-width: 900px; }
+  .kpi-card { min-width: calc(50% - 10px); flex: 1; padding: 7px 10px; }
+  .kpi-card b { font-size: 15px; }
+  .coll-help { font-size: 12px; gap: 8px; }
 
   /* ---- follow-up modal: bottom sheet style ---- */
   .modal-back { padding: 8px; align-items: flex-end; }
