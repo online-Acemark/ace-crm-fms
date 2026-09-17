@@ -218,6 +218,8 @@ export default function Collection() {
   }, [tick, demo])
 
   const salesmen = useMemo(() => [...new Set((rows || []).map((r) => r.salesman).filter(Boolean))].sort(), [rows])
+  // modal ke liye: save/re-sync ke baad bhi fresh row mile
+  const openParty = useMemo(() => (rows || []).find((r) => r.party_name === open) || null, [rows, open])
 
   const kpi = useMemo(() => {
     const list = rows || []
@@ -343,12 +345,11 @@ export default function Collection() {
             {filtered.slice(0, 200).map((p) => {
               const pr = priorityOf(p)
               const wa = waLink(p.mobile, buildCollectionMsg(p))
-              const isOpen = open === p.party_name
-              return [
-                <tr key={p.party_name} className={isOpen ? 'coll-row open' : 'coll-row'} onClick={() => setOpen(isOpen ? null : p.party_name)}>
+              return (
+                <tr key={p.party_name} className="coll-row" onClick={() => setOpen(p.party_name)}>
                   <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                   <td>
-                    <span className="coll-party">{isOpen ? '▼' : '▶'} <b>{p.party_name}</b></span>
+                    <span className="coll-party"><b>{p.party_name}</b></span>
                     <div className="muted small">{[p.salesman, p.city].filter(Boolean).join(' · ')}{p.has_pdc && ' · 🧾 PDC'}</div>
                   </td>
                   <td><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></td>
@@ -361,20 +362,34 @@ export default function Collection() {
                     {p.mobile && <a className="btn ghost sm" href={`tel:${p.mobile}`} title={`Call: ${p.mobile}`}>📞</a>}
                     {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer" title="WhatsApp reminder bhejo"
                       onClick={() => logWaSendParty(p.party_name, 'WhatsApp payment reminder bheja')}>📤</a>}
-                    <button className="btn ghost sm" title="Baat ka note likho" onClick={() => setOpen(isOpen ? null : p.party_name)}>📝</button>
+                    <button className="btn ghost sm" title="Baat ka note likho" onClick={() => setOpen(p.party_name)}>📝</button>
                   </td>
-                </tr>,
-                isOpen && (
-                  <tr key={p.party_name + '_d'} className="coll-detail-row">
-                    <td colSpan={9}><PartyDetail p={p} demo={demo} onSaved={() => setTick((t) => t + 1)} /></td>
-                  </tr>
-                ),
-              ]
+                </tr>
+              )
             })}
             {filtered.length > 200 && <tr><td colSpan={9} className="muted small">…aur {filtered.length - 200} parties — upar search me naam likho</td></tr>}
           </tbody>
         </table>
       </div>
+
+      {openParty && (
+        <div className="modal-back" onClick={() => setOpen(null)}>
+          <div className="modal coll-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>{openParty.party_name} <span className={`pr-badge ${priorityOf(openParty).cls}`} title={priorityOf(openParty).hint}>{priorityOf(openParty).label}</span></h3>
+                <p className="muted small coll-modal-sub">
+                  {[openParty.salesman, openParty.city, openParty.mobile].filter(Boolean).join(' · ')}
+                  {' · '}Total baaki <b>{inrShort(openParty.total_pending)}</b> ({openParty.bill_count} bills)
+                  {openParty.oldest_od ? <> · sabse purana <b>{openParty.oldest_od} din</b></> : null}
+                </p>
+              </div>
+              <button className="btn ghost" onClick={() => setOpen(null)}>✕ Band karo</button>
+            </div>
+            <PartyDetail p={openParty} demo={demo} onSaved={() => setTick((t) => t + 1)} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
