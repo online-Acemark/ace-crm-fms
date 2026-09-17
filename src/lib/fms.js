@@ -51,7 +51,7 @@ export function buildStatusMsg(o, pipe) {
   const dt = (v) => v ? erpDate(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''
   const lines = [`Namaste ${name}`, `Aapke order (SO #${o.mobile_so_no}, ${dt(o.mobile_so_created)}) ka status:`, '']
   if (o.desp_date) {
-    lines.push(`Order dispatch ho chuka hai (${dt(o.desp_date)}).`)
+    lines.push(`Order dispatch ho chuka hai (${dt(o.desp_date)}).${o.despatch_through ? ` Transport: ${o.despatch_through}.` : ''}`)
   } else if (o.gpout_created) {
     lines.push(`Maal gate pass ho gaya hai — dispatch aaj/kal me ho jayega.`)
   } else if (o.billing_date) {
@@ -95,6 +95,25 @@ export function buildBillMsg(o, b) {
   return lines.join('\n')
 }
 
+// Collection follow-up message: party ke PURE LEDGER ka outstanding (saari firms ke bills)
+export function buildCollectionMsg(p) {
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })
+  const dt = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : ''
+  const lines = [`Namaste ${p.party_name}`, '', 'Aapke account me payment pending hai:']
+  lines.push(`Total baaki: ${inr(p.total_pending)} (${p.bill_count} bill${p.bill_count > 1 ? 's' : ''})`)
+  const overdue = (p.bills || []).filter((b) => (b.od || 0) > 0)
+  if (overdue.length) {
+    lines.push('', 'Overdue bills:')
+    for (const b of overdue.slice(0, 5)) {
+      lines.push(`${b.vno || 'Bill'}${b.date ? ' (' + dt(b.date) + ')' : ''} - ${inr(b.pending)} - ${b.od} din overdue`)
+    }
+    if (overdue.length > 5) lines.push(`...aur ${overdue.length - 5} bills`)
+  }
+  if (p.last_pay_date) lines.push('', `Aapka last payment ${inr(p.last_pay_amt)} (${dt(p.last_pay_date)}) mila tha, dhanyavaad.`)
+  lines.push('', 'Kripya payment ki vyavastha karein. Koi bhi jankari ke liye humein batayein. Dhanyavaad!', '— Acemark Stationers')
+  return lines.join('\n')
+}
+
 // WhatsApp bhejne ka log: 📤 click par fms_followups me entry (communication trail)
 export async function logWaSend(o, note) {
   if (new URLSearchParams(window.location.search).has('demo')) return
@@ -102,6 +121,17 @@ export async function logWaSend(o, note) {
     const { data: { user } } = await supabase.auth.getUser()
     await supabase.from('fms_followups').insert({
       mobile_so_no: o.mobile_so_no, remarks: note, mode: 'whatsapp', created_by: user?.email || '',
+    })
+  } catch { /* log fail hone par bhi WhatsApp khulna nahi rukna chahiye */ }
+}
+
+// Collection tab ka WhatsApp log: party-level entry (koi SO number nahi hota)
+export async function logWaSendParty(partyName, note) {
+  if (new URLSearchParams(window.location.search).has('demo')) return
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    await supabase.from('fms_followups').insert({
+      party_name: partyName, remarks: note, mode: 'whatsapp', created_by: user?.email || '',
     })
   } catch { /* log fail hone par bhi WhatsApp khulna nahi rukna chahiye */ }
 }
@@ -223,12 +253,26 @@ const nextWorkingDay = (from) => {
 let stockMap = null // code -> { total, unit, status }
 export async function loadStock() {
   if (stockMap) return
+  // SPEED: pehle browser cache se turant lo (4 ghante fresh), naya data background me aata rahta hai
+  try {
+    const c = JSON.parse(localStorage.getItem('fms_stock_cache') || 'null')
+    if (c && c.m && Date.now() - c.t < 4 * 3600 * 1000) {
+      stockMap = c.m
+      refreshStock() // background refresh — kisi ko rokta nahi
+      return
+    }
+  } catch { /* cache kharab ho to fresh fetch */ }
+  await refreshStock()
+}
+
+async function refreshStock() {
   try {
     const raw = await fetchERP('stock')
     const rows = Array.isArray(raw) ? raw : raw?.DataRec || []
     const m = {}
     for (const r of rows) if (r.ProductCode) m[String(r.ProductCode).trim().toLowerCase()] = { total: Number(r.Total) || 0, unit: r.ProdUnit || '', status: r.StockStatus || '' }
     stockMap = m
+    try { localStorage.setItem('fms_stock_cache', JSON.stringify({ t: Date.now(), m })) } catch { /* storage full — koi baat nahi */ }
   } catch { /* stock na mile to billing purane chain rule par chalta hai */ }
 }
 export const getStockMap = () => stockMap

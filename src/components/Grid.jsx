@@ -82,7 +82,7 @@ function ContactCell({ order, field, placeholder, isEmail, onChanged }) {
   </td>
 }
 
-export default function Grid({ orders, stages, columns, scoring, fupCounts, partyInfo, onChanged }) {
+export default function Grid({ orders, stages, columns, scoring, fupCounts, partyInfo, stockTick, booting, onChanged }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState('all')
   const [open, setOpen] = useState(null)
@@ -93,10 +93,11 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
   const [view, setView] = useState('so') // 'so' = ek row per SO, 'bill' = ek row per bill, 'item' = ek row per product line
   const stockMap = getStockMap() // App.loadAll pehle hi load kar chuka hota hai
 
+  // stockTick: stock background me load hote hi billing rule/stock column fresh ho jate hain
   const rows = useMemo(() => orders.map((o) => {
     const pipe = computePipeline(o, stages, scoring)
     return { o, pipe, score: computeScore(pipe, scoring) }
-  }), [orders, stages, scoring])
+  }), [orders, stages, scoring, stockTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // bill-wise: har bill ki alag row; item-wise: har product line ki alag row; bina bill wale SO waise hi dikhte hain
   const viewRows = useMemo(() => {
@@ -243,7 +244,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
           <thead>
             <tr>
               {visCols.map((c) => c.col_type === 'stage'
-                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 7 : c.col_key === 'stage_dispatch' ? 4 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
+                ? <th key={c.col_key} colSpan={c.col_key === 'stage_billing' ? 5 : c.col_key === 'stage_payment' ? 7 : c.col_key === 'stage_dispatch' ? 5 : 3} className={`stage-h ${c.col_key}`}>{c.label}</th>
                 : <th key={c.col_key} rowSpan={2} className={c.is_custom ? 'cust-h' : ''}>{c.label}{c.is_custom ? ' ✏️' : ''}</th>)}
             </tr>
             <tr>
@@ -255,7 +256,10 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                   <th key={c.col_key + 'q'} className={`sub-h ${c.col_key}`}>Billed Qty</th>,
                   <th key={c.col_key + 'i'} className={`sub-h ${c.col_key}`}>Inv No</th>,
                 ] : []),
-                ...(c.col_key === 'stage_dispatch' ? [<th key={c.col_key + 's'} className={`sub-h ${c.col_key}`}>Status</th>] : []),
+                ...(c.col_key === 'stage_dispatch' ? [
+                  <th key={c.col_key + 's'} className={`sub-h ${c.col_key}`}>Status</th>,
+                  <th key={c.col_key + 't'} className={`sub-h ${c.col_key}`}>Transport</th>,
+                ] : []),
                 ...(c.col_key === 'stage_payment' ? [
                   <th key={c.col_key + 'lp'} className={`sub-h ${c.col_key}`}>Last Pay</th>,
                   <th key={c.col_key + 'n'} className={`sub-h ${c.col_key}`}>F/Ups</th>,
@@ -336,7 +340,11 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       } else if (qty > 0 && pend < 0) {
                         badge = <span className="ds-badge ds-exc">⚠ Excess +{Math.abs(pend)}</span>
                       }
-                      return [cell, <td key={c.col_key + '_st'} className={`sub ${c.col_key}`}>{badge}</td>]
+                      return [cell,
+                        <td key={c.col_key + '_st'} className={`sub ${c.col_key}`}>{badge}</td>,
+                        <td key={c.col_key + '_tr'} className={`sub transport-cell ${c.col_key}`} title={o.buyer_ref ? `Buyer ref: ${o.buyer_ref}` : undefined}>
+                          {o.despatch_through || <span className="muted">—</span>}
+                        </td>]
                     }
                     if (c.col_key === 'stage_payment') {
                       const f = fupCounts?.[o.mobile_so_no]
@@ -447,7 +455,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                 })}
               </tr>
             ))}
-            {!filtered.length && <tr><td colSpan={30} className="empty">Koi order nahi — upar 🔄 Sync ERP dabayen</td></tr>}
+            {!filtered.length && <tr><td colSpan={30} className="empty">{booting ? '⏳ Data load ho raha hai…' : 'Koi order nahi — upar 🔄 Sync ERP dabayen'}</td></tr>}
           </tbody>
         </table>
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, fmtDelay, fmtDT, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup } from '../lib/fms'
 import { toLocalInput } from './Grid'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -115,10 +115,22 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
           <div>
             <h3>📦 Products ({order.line_count})</h3>
             <ul className="prod-list">
-              {(order.products || []).map((p, i) => (
-                <li key={i}>{p.name} <span className="muted">({p.code}) — {p.qty} {p.unit}{Number(p.pending) > 0 ? `, pending ${p.pending}` : ''}</span></li>
-              ))}
+              {(order.products || []).map((p, i) => {
+                const pc = (order.preclosed || []).find((x) => x.name === p.name)
+                return (
+                  <li key={i}>{p.name} <span className="muted">({p.code}) — {p.qty ?? '—'} {p.unit || ''}{Number(p.pending) > 0 ? `, pending ${p.pending}` : ''}</span>
+                    {pc && <span className="red-t small"> 🚫 Pre-closed · {pc.reset} qty · {pc.by}</span>}
+                  </li>
+                )
+              })}
             </ul>
+            {(order.despatch_through || order.ready_for_delivery_date) && (
+              <p className="small muted" style={{ marginTop: 8 }}>
+                {order.ready_for_delivery_date && <>📦 Ready: <b>{fmtERP(order.ready_for_delivery_date)}</b> · </>}
+                {order.despatch_through && <>🚚 Transport: <b>{order.despatch_through}</b></>}
+                {order.buyer_ref && <> · Ref: {order.buyer_ref}</>}
+              </p>
+            )}
             {(order.inv_urls || []).length > 0 && <>
               <h3>🧾 Invoices</h3>
               {(order.inv_urls || []).map((u, i) => <a key={i} className="link" href={u} target="_blank" rel="noreferrer">Invoice PDF {i + 1}</a>)}

@@ -12,6 +12,7 @@ function NAHI badalta — deploy karna padta hai (`supabase functions deploy <na
 | `fms-sync` | Pura ERP sync server-side — orders + delays + scores `fms_orders` me | Cron: har 30 min (`fms-auto-sync`, `*/30 * * * *`) |
 | `fms-digest` | Roz subah ka Telegram digest (counts, follow-ups, payment overdue) | Cron: 9:00 AM IST (`fms-daily-digest`, `30 3 * * *` UTC) |
 | `fms-alerts` | `?mode=instant`: naya order + confirm late; `?mode=dispatch`: 2 PM dispatch reminder | Cron: `5,35 * * * *` (instant) aur 2:00 PM IST (`30 8 * * *` UTC) |
+| `fms-collection-sync` | Poore ledger ka party-wise outstanding (PaymentFollowup + UrgentPaymentFollow) -> `fms_collection` (aging, bills, PDC, credit limit). Fully-paid parties auto-delete. | Cron: har ghante :20 par (`fms-collection-sync`, `20 * * * *`) |
 
 ## Zaroori baat — logic 2 jagah hai
 
@@ -25,7 +26,7 @@ Koi rule badle to **dono jagah** badalna hai.
 
 ## Settings (database me)
 
-- `fms_settings` key `erp`: `{ "so_url": "<MobileSO.ashx>", "stock_url": "<ProductStock.ashx>", "payment_url": "<Payment.ashx>" }`
+- `fms_settings` key `erp`: `{ "so_url": "<MobileSO.ashx>", "stock_url": "<ProductStock.ashx>", "payment_url": "<Payment.ashx>", "payfup_url": "<PaymentFollowup.ashx>", "urgent_url": "<UrgentPaymentFollow.ashx>" }`
   — ERP API addresses. **ERP ka address badle to sirf ye row update karo** (SQL ya
   Supabase Table Editor se) — kisi function ka redeploy nahi chahiye.
 - `fms_settings` key `telegram`: `{ "token": "<bot token>", "chat_id": "<chat id>" }`

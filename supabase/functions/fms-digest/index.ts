@@ -90,6 +90,26 @@ Deno.serve(async () => {
       }
     }
 
+    // ---- pura ledger outstanding (fms_collection se) ----
+    try {
+      const col = await sb("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging");
+      if (col?.length) {
+        const tot = col.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
+        const old180 = col.reduce((a: number, p: any) => a + Number(p.aging?.b180p || 0), 0);
+        L.push("");
+        L.push(`LEDGER OUTSTANDING (sab firms): ${inr(tot)} | ${col.length} parties | 180+ din purana: ${inr(old180)}`);
+        const oldest = [...col].sort((a: any, b: any) => (b.oldest_od || 0) - (a.oldest_od || 0)).slice(0, 10);
+        L.push("TOP 10 SABSE PURANE BAKAYA:");
+        for (const p of oldest) L.push(`- ${p.oldest_od}d | ${p.party_name} | ${inr(p.total_pending)} | ${p.salesman || ""}`);
+        const crossed = col.filter((p: any) => Number(p.credit_limit) > 0 && Number(p.total_pending) > Number(p.credit_limit));
+        if (crossed.length) {
+          const top = crossed.sort((a: any, b: any) => Number(b.total_pending) - Number(a.total_pending)).slice(0, 5);
+          L.push(`CREDIT LIMIT CROSS (${crossed.length} parties):`);
+          for (const p of top) L.push(`- ${p.party_name} | baaki ${inr(p.total_pending)} / limit ${inr(p.credit_limit)} | ${p.salesman || ""}`);
+        }
+      }
+    } catch (_e) { /* collection data na ho to digest waise hi jata hai */ }
+
     L.push("");
     L.push("Pura detail: CRM FMS app kholo.");
     const text = L.join("\n").slice(0, 4000);

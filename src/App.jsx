@@ -4,6 +4,7 @@ import { syncOrders, loadWorkingDays, loadStock } from './lib/fms'
 import Grid from './components/Grid'
 import ActionCenter from './components/ActionCenter'
 import Scoreboard from './components/Scoreboard'
+import Collection from './components/Collection'
 import StageConfig from './components/StageConfig'
 import { getColumns } from './lib/columns'
 
@@ -44,6 +45,8 @@ export default function App() {
   const [scoring, setScoring] = useState(null)
   const [fupCounts, setFupCounts] = useState({})
   const [partyInfo, setPartyInfo] = useState({}) // account_name -> { salesman, beat }
+  const [stockTick, setStockTick] = useState(0) // stock background me load hone par re-render
+  const [booting, setBooting] = useState(true) // pehli data load chal rahi hai
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('fms_theme') || 'light')
@@ -63,7 +66,10 @@ export default function App() {
   }, [])
 
   const loadAll = useCallback(async () => {
-    await Promise.all([loadWorkingDays(), loadStock()]) // planned rules: working day calendar + stock availability
+    // SPEED: sirf working-day calendar ka wait (chhota hai);
+    // stock (4-5MB) BACKGROUND me aata hai — orders pehle dikh jate hain
+    await loadWorkingDays()
+    loadStock().then(() => setStockTick((t) => t + 1))
     if (demo) {
       const { aggregateSO } = await import('./lib/fms')
       const raw = await fetch('/demo-so.json').then((r) => r.json())
@@ -99,8 +105,7 @@ export default function App() {
     setPartyInfo(Object.fromEntries((pi.data || []).map((r) => [r.account_name, { salesman: r.salesman || '', beat: r.beat || '' }])))
   }, [])
 
-
-  useEffect(() => { if (session) loadAll() }, [session, loadAll])
+  useEffect(() => { if (session) { loadAll().finally(() => setBooting(false)) } }, [session, loadAll])
 
   const doSync = async () => {
     setBusy(true)
@@ -122,7 +127,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">📋 <b>CRM FMS</b> <span className="muted small">Acemark</span></div>
         <nav>
-          {[['action', 'Today Work'], ['fms', 'FMS Grid'], ['score', 'Scoreboard'], ['stages', 'Stage Plan']].map(([k, l]) => (
+          {[['action', 'Today Work'], ['fms', 'FMS Grid'], ['coll', 'Collection'], ['score', 'Scoreboard'], ['stages', 'Stage Plan']].map(([k, l]) => (
             <button key={k} className={tab === k ? 'tab active' : 'tab'} onClick={() => setTab(k)}>{l}</button>
           ))}
         </nav>
@@ -137,7 +142,8 @@ export default function App() {
       {msg && <div className="toast">{msg}</div>}
       <main>
         {tab === 'action' && <ActionCenter orders={orders} stages={stages} scoring={scoring} onChanged={loadAll} />}
-        {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} partyInfo={partyInfo} onChanged={loadAll} />}
+        {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} partyInfo={partyInfo} stockTick={stockTick} booting={booting} onChanged={loadAll} />}
+        {tab === 'coll' && <Collection />}
         {tab === 'score' && <Scoreboard orders={orders} stages={stages} scoring={scoring} />}
         {tab === 'stages' && <StageConfig stages={stages} scoring={scoring} onChanged={loadAll} />}
       </main>

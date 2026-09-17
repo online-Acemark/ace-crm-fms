@@ -5,6 +5,8 @@ const ERP_DEFAULTS = {
   so: "http://eksai12.ddns.net:8786/ek_api/telegramApi/MobileSO.ashx",
   stock: "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx",
   payment: "http://eksai12.ddns.net:8786/ek_api/telegramApi/Payment.ashx",
+  otd: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/OrderToDelivery.ashx",
+  preclosed: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/PreClosedOrder.ashx",
 };
 const IST = 5.5 * 3600 * 1000; // function UTC me chalta hai; ERP dates IST wall-clock naked strings hain
 const H = 3600 * 1000;
@@ -211,6 +213,29 @@ function aggregateSO(rows: any[]) {
   return out;
 }
 
+// ---------- OrderToDelivery + PreClosedOrder (googleAutomation APIs) ----------
+// OTD: SOrderNo -> lines (ReadyForDeliveryDate, DespatchThrough, BuyresRef)
+// PreClosed: SOrderNo -> cancel/short-close hui lines (Qty_Reset, Createdby)
+let otdIdx: Map<number, any[]> | null = null;
+let pcIdx: Map<number, any[]> | null = null;
+function buildSoIdx(rows: any[], key: string): Map<number, any[]> {
+  const m = new Map<number, any[]>();
+  for (const r of rows) {
+    const so = Number(r[key]);
+    if (!so) continue;
+    if (!m.has(so)) m.set(so, []);
+    m.get(so)!.push(r);
+  }
+  return m;
+}
+// SOrderNo alag companies me repeat ho sakta hai — account name se confirm karo
+function forOrder(idx: Map<number, any[]> | null, sorderNo: unknown, accountName: string) {
+  if (!idx || sorderNo == null) return [];
+  const cand = idx.get(Number(sorderNo)) || [];
+  const mine = cand.filter((r) => norm(r.AccountName) === norm(accountName));
+  return mine;
+}
+
 // partial = kuch active items ka kaam ho chuka, kuch baaki — delay count nahi hota, score me nahi ginta
 function stagePartialSrv(o: any, key: string) {
   const ps = o.products || [];
@@ -306,6 +331,8 @@ Deno.serve(async () => {
     const ERP_SO = erpCfg.so_url || ERP_DEFAULTS.so;
     const ERP_STOCK = erpCfg.stock_url || ERP_DEFAULTS.stock;
     const ERP_PAYMENT = erpCfg.payment_url || ERP_DEFAULTS.payment;
+    const ERP_OTD = erpCfg.otd_url || ERP_DEFAULTS.otd;
+    const ERP_PRECLOSED = erpCfg.preclosed_url || ERP_DEFAULTS.preclosed;
     const hset = new Set((hd || []).map((r: any) => r.holiday_date));
     workingDaySet = new Set((wd || []).map((r: any) => r.working_date).filter((x: string) => !hset.has(x)));
 
@@ -324,6 +351,22 @@ Deno.serve(async () => {
       const prows = Array.isArray(pjson) ? pjson : pjson?.DataRec || [];
       if (prows.length) buildPayIdx(prows);
     } catch { payIdx = null; }
+
+    // OrderToDelivery (ready date + transporter) — fail ho to fields null, sync nahi rukta
+    try {
+      const ores = await fetch(ERP_OTD, { signal: AbortSignal.timeout(180000) });
+      const ojson = await ores.json();
+      const orows = Array.isArray(ojson) ? ojson : ojson?.DataRec || [];
+      otdIdx = orows.length ? buildSoIdx(orows, "SOrderNo") : null;
+    } catch { otdIdx = null; }
+
+    // PreClosedOrder (cancel hui lines) — fail-tolerant
+    try {
+      const pres2 = await fetch(ERP_PRECLOSED, { signal: AbortSignal.timeout(120000) });
+      const pjson2 = await pres2.json();
+      const prows2 = Array.isArray(pjson2) ? pjson2 : pjson2?.DataRec || [];
+      pcIdx = prows2.length ? buildSoIdx(prows2, "SOrderNo") : null;
+    } catch { pcIdx = null; }
 
     const res = await fetch(ERP_SO, { signal: AbortSignal.timeout(120000) });
     const json = await res.json();
@@ -359,6 +402,21 @@ Deno.serve(async () => {
         ? (matched === (o.bill_nos || []).length && statuses.every((x) => x === "Full") ? "Full" : rec > 0 ? "Part" : "Pending")
         : null;
       o.pay_last_date = lastPay;
+
+      // OTD: ready-for-delivery date + transporter + buyer ref
+      o.ready_for_delivery_date = null; o.despatch_through = null; o.buyer_ref = null;
+      const otdRows = forOrder(otdIdx, o.sorder_no, o.account_name);
+      if (otdRows.length) {
+        o.ready_for_delivery_date = otdRows.map((r: any) => r.ReadyForDeliveryDate).filter(Boolean).sort().at(-1) || null;
+        o.despatch_through = otdRows.map((r: any) => String(r.DespatchThrough || "").trim()).find(Boolean) || null;
+        o.buyer_ref = otdRows.map((r: any) => String(r.BuyresRef || "").trim()).find(Boolean) || null;
+      }
+
+      // PreClosed: is order ki cancel/short-close hui lines
+      const pcRows = forOrder(pcIdx, o.sorder_no, o.account_name).filter((r: any) => Number(r.Qty_Reset) > 0);
+      o.preclosed = pcRows.length
+        ? pcRows.map((r: any) => ({ name: r.ProductName, qty: r.Qty, reset: r.Qty_Reset, by: r.Createdby || "", date: String(r.SOrderDate || "").slice(0, 10) }))
+        : null;
 
       const ex = exMap.get(o.mobile_so_no);
       // ERP Full = payment complete (manual ✔ bhi respect hota hai)
