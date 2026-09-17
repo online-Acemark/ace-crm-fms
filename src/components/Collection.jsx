@@ -28,20 +28,20 @@ const isFupDue = (p) => p.next_followup_date && new Date(p.next_followup_date) <
 
 // Priority: jitna bada number, utna upar. Naya banda bas upar se neeche kaam kare.
 function priorityOf(p) {
-  if (isFupDue(p)) return { rank: 4, label: 'Aaj follow-up', cls: 'pr-due', hint: 'Aapne khud is party ke liye aaj ki date lagayi thi — pehle isko call karo' }
-  if ((p.oldest_od || 0) > 180 || isCross(p)) return { rank: 3, label: 'Turant', cls: 'pr-hot', hint: isCross(p) ? 'Party ne credit limit paar kar di hai' : 'Bill 6 mahine se zyada purana hai' }
-  if ((p.oldest_od || 0) > 90) return { rank: 2, label: 'Jaldi karo', cls: 'pr-warm', hint: 'Bill 3 mahine se zyada purana hai' }
-  if ((p.oldest_od || 0) > 30) return { rank: 1, label: 'Dhyan do', cls: 'pr-mild', hint: 'Bill 1 mahine se purana hai' }
-  return { rank: 0, label: 'Theek hai', cls: 'pr-ok', hint: 'Abhi zyada purana nahi hua' }
+  if (isFupDue(p)) return { rank: 4, label: 'Due today', cls: 'pr-due', hint: 'You set a follow-up date for today — call this party first' }
+  if ((p.oldest_od || 0) > 180 || isCross(p)) return { rank: 3, label: 'Urgent', cls: 'pr-hot', hint: isCross(p) ? 'Party has crossed the credit limit' : 'Oldest bill is more than 6 months overdue' }
+  if ((p.oldest_od || 0) > 90) return { rank: 2, label: 'Act soon', cls: 'pr-warm', hint: 'Oldest bill is more than 3 months overdue' }
+  if ((p.oldest_od || 0) > 30) return { rank: 1, label: 'Watch', cls: 'pr-mild', hint: 'Oldest bill is more than 1 month overdue' }
+  return { rank: 0, label: 'OK', cls: 'pr-ok', hint: 'Nothing is very old yet' }
 }
 
 // Ek-click filter chips — dropdown se aasan
 const PRESETS = [
-  { key: 'all', label: 'Sab' },
-  { key: 'due', label: '📅 Aaj ke follow-up' },
-  { key: 'hot', label: '🔴 Turant (180+/limit)' },
-  { key: 'warm', label: '🟠 90+ din' },
-  { key: 'pdc', label: '🧾 Cheque (PDC) mila' },
+  { key: 'all', label: 'All' },
+  { key: 'due', label: '📅 Due today' },
+  { key: 'hot', label: '🔴 Urgent (180+/limit)' },
+  { key: 'warm', label: '🟠 90+ days' },
+  { key: 'pdc', label: '🧾 PDC received' },
 ]
 
 function AgingChips({ aging }) {
@@ -52,18 +52,18 @@ function AgingChips({ aging }) {
   return (
     <div className="aging-chips">
       {chips.map((c) => (
-        <span key={c.k} className={`age-chip ${cls[c.i]}`} title={`${c.label} din purana paisa: ${inr(c.v)}`}>{c.label}d: {inrShort(c.v)}</span>
+        <span key={c.k} className={`age-chip ${cls[c.i]}`} title={`${c.label} days old: ${inr(c.v)}`}>{c.label}d: {inrShort(c.v)}</span>
       ))}
     </div>
   )
 }
 
 function LimitBar({ pending, limit }) {
-  if (!Number(limit)) return <span className="muted small">limit set nahi</span>
+  if (!Number(limit)) return <span className="muted small">no limit set</span>
   const pct = (Number(pending) / Number(limit)) * 100
   const over = pct > 100
   return (
-    <div className="limit-bar-wrap" title={`Baaki ${inr(pending)} / Limit ${inr(limit)} — limit ka ${Math.round(pct)}% use ho gaya`}>
+    <div className="limit-bar-wrap" title={`Pending ${inr(pending)} / Limit ${inr(limit)} (${Math.round(pct)}% used)`}>
       <div className="limit-bar"><div className={over ? 'limit-fill over' : 'limit-fill'} style={{ width: Math.min(pct, 100) + '%' }} /></div>
       <span className={over ? 'small red-t' : 'small muted'}>{Math.round(pct)}%{over && ' ⚠️'}</span>
     </div>
@@ -87,9 +87,9 @@ function PartyDetail({ p, demo, onSaved }) {
   }, [p.party_name])
 
   const save = async () => {
-    if (!remark.trim()) { setErr('Pehle likho ki baat kya hui (Step 2)'); return }
-    if (!nextDate) { setErr('Agli baar kab yaad dilana hai — date dalo (Step 3)'); return }
-    if (demo) { setErr('Demo mode me save nahi hota — real login karke use karo'); return }
+    if (!remark.trim()) { setErr('Write what was discussed first (Step 2)'); return }
+    if (!nextDate) { setErr('Set the next follow-up date (Step 3)'); return }
+    if (demo) { setErr('Demo mode cannot save — use the real login'); return }
     setSaving(true); setErr(''); setOkMsg('')
     const { data: { user } } = await supabase.auth.getUser()
     const { error: e1 } = await supabase.from('fms_followups').insert({
@@ -101,9 +101,9 @@ function PartyDetail({ p, demo, onSaved }) {
     const { error: e2 } = await supabase.from('fms_collection')
       .update({ next_followup_date: new Date(nextDate).toISOString() }).eq('party_name', p.party_name)
     setSaving(false)
-    if (e1 || e2) { setErr('Save nahi hua: ' + (e1 || e2).message); return }
+    if (e1 || e2) { setErr('Save failed: ' + (e1 || e2).message); return }
     setRemark(''); setAmount('')
-    setOkMsg('✅ Save ho gaya! Agli date par ye party "Aaj ke follow-up" me apne aap aa jayegi.')
+    setOkMsg('✅ Saved! On that date this party will automatically appear under "Due today".')
     setTimeout(() => setOkMsg(''), 5000)
     const { data } = await supabase.from('fms_followups').select('*').eq('party_name', p.party_name)
       .order('created_at', { ascending: false }).limit(20)
@@ -118,35 +118,35 @@ function PartyDetail({ p, demo, onSaved }) {
     <div className="coll-detail">
       <div className="coll-fup">
         <div className="coll-steps">
-          <h4>Is party ke saath kya karna hai:</h4>
+          <h4>What to do with this party:</h4>
           <div className="coll-step-btns">
             <div className="coll-step">
               <span className="step-num">1</span>
               <div>
-                <b>Baat karo</b>
+                <b>Talk to them</b>
                 <div className="step-actions">
                   {p.mobile && <a className="btn primary sm" href={`tel:${p.mobile}`}>📞 Call {p.mobile}</a>}
                   {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer"
-                    onClick={() => logWaSendParty(p.party_name, 'WhatsApp payment reminder bheja')}>📤 WhatsApp bhejo</a>}
-                  {!p.mobile && <span className="muted small">Mobile number nahi hai — salesman {p.salesman || ''} se poochho</span>}
+                    onClick={() => logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder')}>📤 Send WhatsApp</a>}
+                  {!p.mobile && <span className="muted small">No mobile number — ask salesman {p.salesman || ''}</span>}
                 </div>
-                <p className="muted small">Poochhna hai: "Total {inrShort(p.total_pending)} baaki hai{p.oldest_od ? `, sabse purana bill ${p.oldest_od} din se pending` : ''} — payment kab tak hoga?"</p>
+                <p className="muted small">Ask: "Total {inrShort(p.total_pending)} is pending{p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"</p>
               </div>
             </div>
             <div className="coll-step">
               <span className="step-num">2</span>
               <div className="step-form">
-                <b>Jo baat hui, yahan likho</b>
-                <input placeholder='Jaise: "Bole 5 tarikh ko RTGS karenge"' value={remark} onChange={(e) => setRemark(e.target.value)} />
-                <input type="number" placeholder="Paisa abhi mila ho to amount likho (warna khali chhodo)" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                <b>Note what they said</b>
+                <input placeholder='e.g. "Will pay by RTGS on the 5th"' value={remark} onChange={(e) => setRemark(e.target.value)} />
+                <input type="number" placeholder="Amount received now (leave blank if none)" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
             </div>
             <div className="coll-step">
               <span className="step-num">3</span>
               <div className="step-form">
-                <b>Agli baar kab yaad dilaye?</b>
+                <b>When to remind next?</b>
                 <input type="datetime-local" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
-                <button className="btn primary" onClick={save} disabled={saving}>{saving ? '⏳ Save ho raha…' : '💾 Save karo'}</button>
+                <button className="btn primary" onClick={save} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save'}</button>
               </div>
             </div>
           </div>
@@ -154,32 +154,32 @@ function PartyDetail({ p, demo, onSaved }) {
           {okMsg && <p className="green-t small"><b>{okMsg}</b></p>}
         </div>
         <div className="fup-log">
-          <h4>🗒️ Pehle kya baat hui thi {logs?.length ? `(${logs.length})` : ''}</h4>
-          {logs === null ? <p className="muted small">Load ho raha hai…</p>
-            : logs.length === 0 ? <p className="muted small">Is party se abhi tak koi baat record nahi hui — aap pehli baar call kar rahe ho.</p>
+          <h4>🗒️ Past conversations {logs?.length ? `(${logs.length})` : ''}</h4>
+          {logs === null ? <p className="muted small">Loading…</p>
+            : logs.length === 0 ? <p className="muted small">No conversation recorded with this party yet — you are the first to call.</p>
             : logs.map((l) => (
               <div key={l.id} className="fup-log-item">
                 <span className="muted small">{new Date(l.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                 {l.mode === 'whatsapp' ? ' 📤 ' : ' 📞 '}
                 <span>{l.remarks}</span>
-                {l.amount_received != null && <b className="green-t"> · {inr(l.amount_received)} mila</b>}
+                {l.amount_received != null && <b className="green-t"> · {inr(l.amount_received)} received</b>}
                 {l.created_by && <span className="muted small"> — {l.created_by.split('@')[0]}</span>}
               </div>
             ))}
         </div>
       </div>
       <div className="coll-bills">
-        <h4>🧾 Kaunse bills baaki hain ({(p.bills || []).length}{overdueBills.length ? ` — ${overdueBills.length} overdue` : ''})</h4>
+        <h4>🧾 Pending bills ({(p.bills || []).length}{overdueBills.length ? ` — ${overdueBills.length} overdue` : ''})</h4>
         <div className="tbl-wrap-inner">
           <table className="cfg-tbl coll-bill-tbl">
-            <thead><tr><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Kitna Purana</th><th>Baaki</th><th>Cheque (PDC)</th><th>Bilty</th><th>Office Note</th></tr></thead>
+            <thead><tr><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th>Pending</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th></tr></thead>
             <tbody>
               {(p.bills || []).slice(0, 100).map((b, i) => (
                 <tr key={i} className={b.od > 180 ? 'coll-old' : ''}>
                   <td><b>{b.vno || '—'}</b></td>
                   <td className="small">{b.company || '—'}</td>
                   <td>{dmy(b.date)}</td>
-                  <td>{b.od > 0 ? <span className={b.od > 90 ? 'red-t' : 'amber-t'}><b>{b.od} din overdue</b></span> : <span className="muted small">{b.days != null ? `${b.days} din (time hai)` : '—'}</span>}</td>
+                  <td>{b.od > 0 ? <span className={b.od > 90 ? 'red-t' : 'amber-t'}><b>{b.od} days overdue</b></span> : <span className="muted small">{b.days != null ? `${b.days} days (not due yet)` : '—'}</span>}</td>
                   <td><b>{inr(b.pending)}</b></td>
                   <td className="small">{b.pdc_rcpt || b.pdc_date ? `✅ ${b.pdc_rcpt || ''} ${dmy(b.pdc_date)}` : '—'}</td>
                   <td className="small">{b.bilty || '—'}</td>
@@ -187,7 +187,7 @@ function PartyDetail({ p, demo, onSaved }) {
                 </tr>
               ))}
               {(p.bills || []).length > 100 && (
-                <tr><td colSpan={8} className="muted small">…aur {(p.bills || []).length - 100} bills (sabse purane 100 upar dikh rahe hain)</td></tr>
+                <tr><td colSpan={8} className="muted small">…and {(p.bills || []).length - 100} more bills (oldest 100 shown above)</td></tr>
               )}
             </tbody>
           </table>
@@ -264,36 +264,36 @@ export default function Collection() {
 
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('fms_coll_help_seen', '1') } catch { /* private mode */ } }
 
-  if (rows === null) return <div className="action-page"><p className="muted">Collection data load ho raha hai…</p></div>
+  if (rows === null) return <div className="action-page"><p className="muted">Loading collection data…</p></div>
 
   return (
     <div className="action-page coll-page">
       <div className="action-head">
-        <h2>💰 Collection — Payment Vasooli</h2>
-        <p className="muted small">Company ka poora bakaya paisa, party-wise. Sabse zaroori party <b>sabse upar</b> hai — bas upar se neeche kaam karte jao.</p>
+        <h2>💰 Collection — Outstanding Payments</h2>
+        <p className="muted small">All pending payments of the company, party-wise. The most important party is <b>at the top</b> — just work from top to bottom.</p>
 
         {showHelp && (
           <div className="coll-help">
-            <b>Kaise use karo (3 steps):</b>
-            <span>1️⃣ Upar wali party par click karo</span>
-            <span>2️⃣ 📞 Call ya 📤 WhatsApp karo</span>
-            <span>3️⃣ Jo baat hui wo likho + agli date dalo → Save</span>
-            <button className="btn ghost sm" onClick={dismissHelp}>✕ Samajh gaya</button>
+            <b>How to use (3 steps):</b>
+            <span>1️⃣ Click the top party</span>
+            <span>2️⃣ 📞 Call or 📤 WhatsApp them</span>
+            <span>3️⃣ Note what they said + set next date → Save</span>
+            <button className="btn ghost sm" onClick={dismissHelp}>✕ Got it</button>
           </div>
         )}
 
         <div className="coll-kpis">
           <button className={preset === 'all' ? 'kpi-card active' : 'kpi-card'} onClick={() => setPreset('all')}>
-            <b>{inrShort(kpi.total)}</b><span>Total baaki · {rows.length} parties</span>
+            <b>{inrShort(kpi.total)}</b><span>Total pending · {rows.length} parties</span>
           </button>
           <button className={preset === 'due' ? 'kpi-card due active' : 'kpi-card due'} onClick={() => setPreset('due')}>
-            <b>{kpi.due}</b><span>📅 Aaj ke follow-up</span>
+            <b>{kpi.due}</b><span>📅 Follow-ups due today</span>
           </button>
           <button className={preset === 'hot' ? 'kpi-card red active' : 'kpi-card red'} onClick={() => setPreset('hot')}>
-            <b>{kpi.hot}</b><span>🔴 Turant — {inrShort(kpi.old180)} bahut purana</span>
+            <b>{kpi.hot}</b><span>🔴 Urgent — {inrShort(kpi.old180)} very old</span>
           </button>
           <button className={preset === 'pdc' ? 'kpi-card active' : 'kpi-card'} onClick={() => setPreset('pdc')}>
-            <b>{kpi.pdc}</b><span>🧾 Cheque (PDC) mila hai</span>
+            <b>{kpi.pdc}</b><span>🧾 PDC (cheque) received</span>
           </button>
         </div>
 
@@ -303,41 +303,41 @@ export default function Collection() {
               <button key={p.key} className={preset === p.key ? 'preset-chip active' : 'preset-chip'} onClick={() => setPreset(p.key)}>{p.label}</button>
             ))}
           </div>
-          <input className="search" placeholder="🔍 Party ka naam / mobile / city likho…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="search" placeholder="🔍 Search party / mobile / city…" value={q} onChange={(e) => setQ(e.target.value)} />
           <select value={salesman} onChange={(e) => setSalesman(e.target.value)}>
-            <option value="">Salesman: sab</option>
+            <option value="">Salesman: All</option>
             {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           {(q || salesman || preset !== 'all') && (
-            <button className="btn ghost sm" onClick={() => { setQ(''); setSalesman(''); setPreset('all') }}>✕ Filter hatao</button>
+            <button className="btn ghost sm" onClick={() => { setQ(''); setSalesman(''); setPreset('all') }}>✕ Clear filters</button>
           )}
           <span className="filter-count active">🔎 {filtered.length} / {rows.length} parties</span>
         </div>
       </div>
 
       {demo && rows.length > 0 && (
-        <div className="panel demo-note"><p className="muted small">⚠️ Ye SAMPLE data hai (demo mode). Real 682 parties ka data dekhne ke liye bina <code>?demo</code> ke login karo.</p></div>
+        <div className="panel demo-note"><p className="muted small">⚠️ This is SAMPLE data (demo mode). Login without <code>?demo</code> to see the real data.</p></div>
       )}
       {rows.length === 0 && (
-        <div className="panel"><p className="muted">Koi collection data nahi mila. Agla ERP sync (har ghante :20 par) hone do.</p></div>
+        <div className="panel"><p className="muted">No collection data yet. Wait for the next ERP sync (hourly at :20).</p></div>
       )}
 
       {rows.length > 0 && filtered.length === 0 && (
-        <div className="panel"><p className="muted">Is filter me koi party nahi mili. <button className="link" onClick={() => { setQ(''); setSalesman(''); setPreset('all') }}>Filter hatao</button></p></div>
+        <div className="panel"><p className="muted">No party matches this filter. <button className="link" onClick={() => { setQ(''); setSalesman(''); setPreset('all') }}>Clear filters</button></p></div>
       )}
 
       <div className="panel coll-list">
         <table className="cfg-tbl coll-tbl">
           <thead>
             <tr>
-              <th>{sortBtn('priority', 'Kitna Zaroori', 'Sabse zaroori upar — isi order me kaam karo')}</th>
+              <th>{sortBtn('priority', 'Priority', 'Most important on top — work in this order')}</th>
               <th>{sortBtn('party_name', 'Party')}</th>
-              <th>{sortBtn('total_pending', 'Total Baaki')}</th>
-              <th>{sortBtn('oldest_od', 'Kitna Purana', 'Sabse purana bill kitne din se overdue hai')}</th>
-              <th title="Kaunsa paisa kitna purana hai — hara naya, laal bahut purana">Kab ka Paisa</th>
-              <th title="Party ko kitne tak udhaar dene ki limit hai, kitni use ho gayi">Credit Limit</th>
+              <th>{sortBtn('total_pending', 'Total Pending')}</th>
+              <th>{sortBtn('oldest_od', 'Oldest Due', 'How many days the oldest bill is overdue')}</th>
+              <th title="How old the money is — green is new, red is very old">Aging</th>
+              <th title="Credit limit given to the party and how much is used">Credit Limit</th>
               <th>Last Payment</th>
-              <th>Agla F/Up</th>
+              <th>Next F/Up</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -353,21 +353,21 @@ export default function Collection() {
                     <div className="muted small">{[p.salesman, p.city].filter(Boolean).join(' · ')}{p.has_pdc && ' · 🧾 PDC'}</div>
                   </td>
                   <td><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></td>
-                  <td>{p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} din</b></span> : '—'}</td>
+                  <td>{p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'}</td>
                   <td><AgingChips aging={p.aging} /></td>
                   <td><LimitBar pending={p.total_pending} limit={p.credit_limit} /></td>
                   <td className="small">{p.last_pay_amt ? <>{inrShort(p.last_pay_amt)}<div className="muted">{dmy(p.last_pay_date)}</div></> : <span className="muted">—</span>}</td>
                   <td className="small">{p.next_followup_date ? <span className={isFupDue(p) ? 'amber-t' : ''}>{isFupDue(p) && '📅 '}{dmy(p.next_followup_date)}</span> : '—'}</td>
                   <td className="coll-actions" onClick={(e) => e.stopPropagation()}>
                     {p.mobile && <a className="btn ghost sm" href={`tel:${p.mobile}`} title={`Call: ${p.mobile}`}>📞</a>}
-                    {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer" title="WhatsApp reminder bhejo"
-                      onClick={() => logWaSendParty(p.party_name, 'WhatsApp payment reminder bheja')}>📤</a>}
-                    <button className="btn ghost sm" title="Baat ka note likho" onClick={() => setOpen(p.party_name)}>📝</button>
+                    {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer" title="Send WhatsApp reminder"
+                      onClick={() => logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder')}>📤</a>}
+                    <button className="btn ghost sm" title="Add a follow-up note" onClick={() => setOpen(p.party_name)}>📝</button>
                   </td>
                 </tr>
               )
             })}
-            {filtered.length > 200 && <tr><td colSpan={9} className="muted small">…aur {filtered.length - 200} parties — upar search me naam likho</td></tr>}
+            {filtered.length > 200 && <tr><td colSpan={9} className="muted small">…and {filtered.length - 200} more parties — use the search box above</td></tr>}
           </tbody>
         </table>
       </div>
@@ -380,11 +380,11 @@ export default function Collection() {
                 <h3>{openParty.party_name} <span className={`pr-badge ${priorityOf(openParty).cls}`} title={priorityOf(openParty).hint}>{priorityOf(openParty).label}</span></h3>
                 <p className="muted small coll-modal-sub">
                   {[openParty.salesman, openParty.city, openParty.mobile].filter(Boolean).join(' · ')}
-                  {' · '}Total baaki <b>{inrShort(openParty.total_pending)}</b> ({openParty.bill_count} bills)
-                  {openParty.oldest_od ? <> · sabse purana <b>{openParty.oldest_od} din</b></> : null}
+                  {' · '}Total pending <b>{inrShort(openParty.total_pending)}</b> ({openParty.bill_count} bills)
+                  {openParty.oldest_od ? <> · oldest <b>{openParty.oldest_od} days</b></> : null}
                 </p>
               </div>
-              <button className="btn ghost" onClick={() => setOpen(null)}>✕ Band karo</button>
+              <button className="btn ghost" onClick={() => setOpen(null)}>✕ Close</button>
             </div>
             <PartyDetail p={openParty} demo={demo} onSaved={() => setTick((t) => t + 1)} />
           </div>
