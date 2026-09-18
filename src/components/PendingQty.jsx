@@ -74,7 +74,7 @@ export default function PendingQty() {
   return (
     <div className="action-page act-page">
       <div className="action-head">
-        <h2>📦 Pending Qty — Order-wise Pending Items</h2>
+        <h2>📦 Pending Order — Order-wise Pending Items</h2>
         <p className="muted small">Live from ERP: every order line that is still pending, with stock position and how late it is.</p>
         {err && <p className="err small">❌ Could not load: {err} <button className="link" onClick={() => { setRows(null); load() }}>Retry</button></p>}
 
