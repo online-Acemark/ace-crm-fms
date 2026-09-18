@@ -6,6 +6,7 @@ import ActionCenter from './components/ActionCenter'
 import Scoreboard from './components/Scoreboard'
 import Collection from './components/Collection'
 import StageConfig from './components/StageConfig'
+import UserControl, { APP_TABS } from './components/UserControl'
 import { getColumns } from './lib/columns'
 
 function Login() {
@@ -49,6 +50,7 @@ export default function App() {
   const [booting, setBooting] = useState(true) // pehli data load chal rahi hai
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [access, setAccess] = useState(undefined) // fms_users row: undefined = loading, null = list me nahi (sab tabs)
   const [theme, setTheme] = useState(() => localStorage.getItem('fms_theme') || 'light')
 
   useEffect(() => {
@@ -107,6 +109,22 @@ export default function App() {
 
   useEffect(() => { if (session) { loadAll().finally(() => setBooting(false)) } }, [session, loadAll])
 
+  // tab-wise access (fms_users): list me nahi = saare tabs; admin ko User Control tab bhi
+  useEffect(() => {
+    if (!session) return
+    if (demo) { setAccess({ is_admin: true, tabs: APP_TABS.map(([k]) => k) }); return }
+    supabase.from('fms_users').select('*').eq('email', (session.user?.email || '').toLowerCase()).maybeSingle()
+      .then(({ data }) => setAccess(data || null))
+  }, [session]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const allowedKeys = access?.tabs?.length ? access.tabs : APP_TABS.map(([k]) => k)
+  const navTabs = [...APP_TABS.filter(([k]) => allowedKeys.includes(k)), ...(access?.is_admin ? [['users', 'User Control']] : [])]
+  // agar current tab ka access nahi hai to pehle allowed tab par bhej do
+  useEffect(() => {
+    if (access === undefined) return
+    if (!navTabs.some(([k]) => k === tab) && navTabs.length) setTab(navTabs[0][0])
+  }, [access, tab]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const doSync = async () => {
     setBusy(true)
     try {
@@ -127,7 +145,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">📋 <b>CRM FMS</b> <span className="muted small">Acemark</span></div>
         <nav>
-          {[['action', 'Today Work'], ['fms', 'FMS Grid'], ['coll', 'Collection'], ['score', 'Scoreboard'], ['stages', 'Stage Plan']].map(([k, l]) => (
+          {navTabs.map(([k, l]) => (
             <button key={k} className={tab === k ? 'tab active' : 'tab'} onClick={() => setTab(k)}>{l}</button>
           ))}
         </nav>
@@ -146,6 +164,7 @@ export default function App() {
         {tab === 'coll' && <Collection />}
         {tab === 'score' && <Scoreboard orders={orders} stages={stages} scoring={scoring} />}
         {tab === 'stages' && <StageConfig stages={stages} scoring={scoring} onChanged={loadAll} />}
+        {tab === 'users' && access?.is_admin && <UserControl myEmail={user.email} />}
       </main>
     </div>
   )

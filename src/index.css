@@ -319,6 +319,15 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .remark-inp { width: 150px; }
 .cust input[type="datetime-local"] { width: 165px; }
 
+/* ================= User Control tab ================= */
+.uc-title { margin: 0 0 10px; font-size: 14px; }
+.uc-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.uc-add input { min-width: 240px; }
+.uc-tbl th, .uc-tbl td { text-align: center; }
+.uc-tbl th:first-child, .uc-tbl td:first-child { text-align: left; }
+.uc-chk input { width: 16px; height: 16px; cursor: pointer; }
+.uc-note { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+
 /* ERP OrderStatus badge (OK / Product changed at SO) */
 .ost-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
 .ost-badge.ost-ok { color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 50%, transparent); }

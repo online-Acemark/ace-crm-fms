@@ -35,6 +35,11 @@ Koi rule badle to **dono jagah** badalna hai.
 - `working_day_calender` + `holidays`: working-day rules ka calendar
   (23 Feb 2027 tak bhara hai — uske baad naya saal add karna hoga).
 - `fms_alert_log`: kis SO ka kaun sa alert ja chuka (duplicate rokne ke liye).
+- `fms_users`: tab-wise access (User Control tab). List me nahi = saare tabs.
+  `is_admin=true` wale hi doosron ka access badal sakte hain (RLS policy
+  `fms_is_admin()` security-definer function se — warna infinite recursion).
+  Naya admin banana ho aur koi admin login na ho to SQL se:
+  `update fms_users set is_admin=true where email='...';`
 
 ## Payment reconciliation (Payment.ashx)
 
