@@ -52,6 +52,7 @@ export default function App() {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [access, setAccess] = useState(undefined) // fms_users row: undefined = loading, null = list me nahi (sab tabs)
+  const [menuOpen, setMenuOpen] = useState(false) // avatar dropdown (User Control / Logout)
   const [theme, setTheme] = useState(() => localStorage.getItem('fms_theme') || 'light')
 
   useEffect(() => {
@@ -119,11 +120,13 @@ export default function App() {
   }, [session]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const allowedKeys = access?.tabs?.length ? access.tabs : APP_TABS.map(([k]) => k)
-  const navTabs = [...APP_TABS.filter(([k]) => allowedKeys.includes(k)), ...(access?.is_admin ? [['users', 'User Control']] : [])]
+  const navTabs = APP_TABS.filter(([k]) => allowedKeys.includes(k))
+  // User Control nav me nahi — avatar menu se khulta hai (sirf admin)
+  const validKeys = [...navTabs.map(([k]) => k), ...(access?.is_admin ? ['users'] : [])]
   // agar current tab ka access nahi hai to pehle allowed tab par bhej do
   useEffect(() => {
     if (access === undefined) return
-    if (!navTabs.some(([k]) => k === tab) && navTabs.length) setTab(navTabs[0][0])
+    if (!validKeys.includes(tab) && navTabs.length) setTab(navTabs[0][0])
   }, [access, tab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const doSync = async () => {
@@ -154,8 +157,21 @@ export default function App() {
           <button className="btn ghost theme-btn" title={theme === 'light' ? 'Dark mode' : 'Light mode'}
             onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>{theme === 'light' ? '🌙' : '☀️'}</button>
           <button className="btn primary" onClick={doSync} disabled={busy}>{busy ? '⏳' : '🔄'}<span className="sync-txt">{busy ? ' Syncing…' : ' Sync ERP'}</span></button>
-          <span className="user" title={user.email}>{user.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="" /> : user.email?.[0]?.toUpperCase()}</span>
-          <button className="btn ghost" onClick={() => supabase.auth.signOut()}>Logout</button>
+          <div className="user-menu-wrap">
+            <button className="user" title={user.email} onClick={() => setMenuOpen((v) => !v)}>
+              {user.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="" /> : user.email?.[0]?.toUpperCase()}
+            </button>
+            {menuOpen && <>
+              <div className="user-menu-back" onClick={() => setMenuOpen(false)} />
+              <div className="user-menu">
+                <div className="um-email">{user.email}</div>
+                {access?.is_admin && (
+                  <button className={tab === 'users' ? 'um-item active' : 'um-item'} onClick={() => { setTab('users'); setMenuOpen(false) }}>👥 User Control</button>
+                )}
+                <button className="um-item" onClick={() => { setMenuOpen(false); if (demo) { window.location.href = window.location.pathname } else { supabase.auth.signOut() } }}>🚪 Logout</button>
+              </div>
+            </>}
+          </div>
         </div>
       </header>
       {msg && <div className="toast">{msg}</div>}
