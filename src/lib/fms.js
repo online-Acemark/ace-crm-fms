@@ -68,6 +68,17 @@ export function buildStatusMsg(o, pipe) {
   return lines.join('\n')
 }
 
+// ERP OrderStatus: 'Product changed at SO' = wo mobile item SO me nahi gaya.
+// ERP naya product directly NAHI batata — hint: usi order me jin OK lines ki
+// SO qty mobile qty se badhi hai, change usi me merge hua hoga (replacement guess).
+export function changedLines(o) {
+  const all = o._soProducts || o.products || []
+  const changed = all.filter((p) => p.ostatus && p.ostatus !== 'OK')
+  if (!changed.length) return { changed: [], repl: [] }
+  const repl = all.filter((p) => (!p.ostatus || p.ostatus === 'OK') && Number(p.qty || 0) > Number(p.mqty || 0))
+  return { changed, repl }
+}
+
 // Family 'N' = No follow-up: is account ka payment follow-up nahi karna hai
 export function noFollowup(o) {
   return String(o.acc_family || '').trim().toUpperCase() === 'N'
@@ -215,7 +226,7 @@ export function aggregateSO(rows) {
       bill_nos: [...billMap.keys()],
       inv_urls: [...billMap.values()].map((b) => b.url),
       bills: [...billMap.values()].map(({ bill_no, billing_date, amt, qty, url, products }) => ({ bill_no, billing_date, amount: amt, qty, url, products })),
-      products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit, mqty: l.MobileApp_Qty, munit: l.MasterUnit, bqty: l.BillQty, bno: l.BillNo ?? null, gpno: l.GPOutNo ?? null, gpdt: l.GPOUTCreated ?? null, ddt: l.DespDate ?? null })),
+      products: lines.map((l) => ({ name: l.ProductName, code: l.ProductCode, qty: l.SO_Qty, pending: l.PendingQty, unit: l.ProdUnit, mqty: l.MobileApp_Qty, munit: l.MasterUnit, bqty: l.BillQty, bno: l.BillNo ?? null, gpno: l.GPOutNo ?? null, gpdt: l.GPOUTCreated ?? null, ddt: l.DespDate ?? null, ostatus: l.OrderStatus ?? null })),
     })
   }
   return out

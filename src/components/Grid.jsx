@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, computeScore, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid, stagePartial } from '../lib/fms'
+import { computePipeline, computeScore, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, buildBillMsg, waLink, noFollowup, getStockMap, paymentDue, logWaSend, isPaid, stagePartial, changedLines } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -115,6 +115,7 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
           const bo = {
             ...o, _billKey: o.mobile_so_no + '_item' + i,
             products: p ? [p] : [], line_count: 1,
+            _soProducts: o.products, // replacement-hint ke liye pure order ki lines chahiye
             so_qty: p?.qty ?? null, pending_qty: p?.pending ?? null,
             billing_date: bill ? bill.billing_date : (activeUnbilled ? null : o.billing_date),
             bill_nos: bill ? [bill.bill_no] : (activeUnbilled ? [] : o.bill_nos),
@@ -402,6 +403,31 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       const ps = o.products || []
                       if (ps.length === 1) return <td key={c.col_key} className="item-cell" title={`${ps[0].name} (${ps[0].code || ''})`}>{ps[0].name}</td>
                       return <td key={c.col_key} className="item-cell muted">{ps.length ? ps.length + ' items' : '—'}</td>
+                    }
+                    case 'order_status': {
+                      // ERP ka OrderStatus: 'OK' ya 'Product changed at SO' (SO convert ke time item badla/hata).
+                      // Replacement ERP nahi batata — hint: usi order me jin lines ki SO qty mobile se badhi.
+                      const ps = o.products || []
+                      if (!ps.length) return <td key={c.col_key} className="muted">—</td>
+                      const { changed, repl } = changedLines(o)
+                      const replTxt = repl.map((r) => `${r.name} (${Number(r.mqty) || 0}→${Number(r.qty)})`).join(', ')
+                      if (ps.length === 1) {
+                        const st = ps[0].ostatus
+                        if (!st) return <td key={c.col_key} className="muted">—</td>
+                        if (st === 'OK') return <td key={c.col_key}><span className="ost-badge ost-ok">OK</span></td>
+                        return <td key={c.col_key} className="ost-cell">
+                          <span className="ost-badge ost-chg" title={st}>🔁 Changed</span>
+                          {repl.length > 0 && <div className="muted small ost-repl" title={`Possibly replaced by (SO qty increased): ${replTxt}`}>→ {repl[0].name}{repl.length > 1 ? ` +${repl.length - 1}` : ''}</div>}
+                        </td>
+                      }
+                      if (!ps.some((p) => p.ostatus)) return <td key={c.col_key} className="muted">—</td>
+                      if (!changed.length) return <td key={c.col_key}><span className="ost-badge ost-ok">OK</span></td>
+                      return <td key={c.col_key} className="ost-cell">
+                        <span className="ost-badge ost-chg" title={`Changed: ${changed.map((p) => `${p.name} (${Number(p.mqty) || 0}${p.munit ? ' ' + p.munit : ''})`).join(', ')}`}>🔁 {changed.length} changed</span>
+                        <div className="muted small ost-repl" title={changed.map((p) => p.name).join(', ') + (repl.length ? ` | Possibly replaced by: ${replTxt}` : '')}>
+                          {changed.map((p) => p.name).join(', ')}{repl.length > 0 && <> → {repl[0].name}{repl.length > 1 ? ` +${repl.length - 1}` : ''}</>}
+                        </div>
+                      </td>
                     }
                     case 'so_qty': {
                       const ps = o.products || []

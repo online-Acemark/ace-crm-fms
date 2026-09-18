@@ -38,6 +38,7 @@ export const COLUMNS = [
   { col_key: 'so_amount',       label: 'SO Amount',     col_type: 'builtin' },
   { col_key: 'mobile_qty',      label: 'Mobile SO Qty', col_type: 'builtin' },
   { col_key: 'item',            label: 'Item',          col_type: 'builtin' },
+  { col_key: 'order_status',    label: 'Order Status',  col_type: 'builtin' },
   { col_key: 'so_qty',          label: 'SO Qty',        col_type: 'builtin' },
   { col_key: 'unit',            label: 'Unit',          col_type: 'builtin' },
   { col_key: 'stock',           label: 'Stock',         col_type: 'builtin' },

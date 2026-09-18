@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue, changedLines } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -91,10 +91,18 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                     const c = resolveContact(o)
                     const wa = waLink(o.mobile_no, buildStatusMsg(o, pipe))
                     const due = paymentDue(o.billing_date, o.credit_days)
+                    // ERP OrderStatus: SO convert ke time jo items badle/hate gaye + replacement hint
+                    const { changed, repl } = changedLines(o)
                     return (
                       <tr key={o.mobile_so_no}>
                         <td><button className="link" onClick={() => setOpen(o)}><b>#{o.mobile_so_no}</b></button></td>
-                        <td><b>{o.account_name}</b>{c.contact_person && <span className="muted"> · {c.contact_person}</span>}</td>
+                        <td><b>{o.account_name}</b>{c.contact_person && <span className="muted"> · {c.contact_person}</span>}
+                          {changed.length > 0 && (
+                            <div className="ost-note small">
+                              🔁 <b>Product changed at SO:</b> {changed.map((p) => `${p.name} (${Number(p.mqty) || 0}${p.munit ? ' ' + p.munit : ''})`).join(', ')}
+                              {repl.length > 0 && <span className="muted"> · likely replaced by: {repl.map((r) => `${r.name} (${Number(r.mqty) || 0}→${Number(r.qty)})`).join(', ')}</span>}
+                            </div>
+                          )}</td>
                         <td>{o.mobile_no && <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">📞 {o.mobile_no}</a>}</td>
                         <td className="small">
                           {sec.key === 'confirm' && <>SO aaya: {fmtERP(o.mobile_so_created)}</>}
