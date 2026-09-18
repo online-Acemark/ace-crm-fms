@@ -9,7 +9,7 @@ export default function PendingQty() {
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
-  const [godown, setGodown] = useState('')
+  const [godowns, setGodowns] = useState([]) // multi-select: khali = sab
   const [division, setDivision] = useState('')
   const [cat, setCat] = useState('')
   const [brand, setBrand] = useState('')
@@ -35,7 +35,7 @@ export default function PendingQty() {
     let list = rows || []
     const s = q.trim().toLowerCase()
     if (s) list = list.filter((r) => `${r.PartyName} ${r.ProductName} ${r.ProductCode} ${r.Number}`.toLowerCase().includes(s))
-    if (godown) list = list.filter((r) => String(r.Godown || '').trim() === godown)
+    if (godowns.length) list = list.filter((r) => godowns.includes(String(r.Godown || '').trim()))
     if (division) list = list.filter((r) => String(r.ProdDivision || '').trim() === division)
     if (cat) list = list.filter((r) => String(r.BaseCat || '').trim() === cat)
     if (brand) list = list.filter((r) => String(r.ProdBrand || '').trim() === brand)
@@ -48,7 +48,7 @@ export default function PendingQty() {
       const bv = ['PartyName', 'ProductName', 'Number'].includes(k) ? String(b[k] || '') : num(b[k])
       return (av < bv ? -1 : av > bv ? 1 : 0) * mul
     })
-  }, [rows, q, godown, division, cat, brand, onlyLate, onlyStock, sort])
+  }, [rows, q, godowns, division, cat, brand, onlyLate, onlyStock, sort])
 
   const kpi = useMemo(() => {
     const list = filtered
@@ -67,7 +67,7 @@ export default function PendingQty() {
     </button>
   )
 
-  const anyFilter = q || godown || division || cat || brand || onlyLate || onlyStock
+  const anyFilter = q || godowns.length || division || cat || brand || onlyLate || onlyStock
 
   if (rows === null) return <div className="action-page"><p className="muted">Loading pending quantity from ERP…</p></div>
 
@@ -86,11 +86,18 @@ export default function PendingQty() {
         </div>
 
         <div className="action-filter coll-filters">
+          <div className="coll-presets pq-godowns">
+            <span className="muted small">Godown:</span>
+            <button className={!godowns.length ? 'preset-chip active' : 'preset-chip'} onClick={() => setGodowns([])}>All</button>
+            {opts.godown.map((g) => (
+              <button key={g} className={godowns.includes(g) ? 'preset-chip active' : 'preset-chip'}
+                title="Click to select — multiple godowns can be selected together"
+                onClick={() => setGodowns((cur) => cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g])}>
+                {godowns.includes(g) ? '✓ ' : ''}{g}
+              </button>
+            ))}
+          </div>
           <input className="search" placeholder="🔍 Search party / product / code / order no…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <select value={godown} onChange={(e) => setGodown(e.target.value)}>
-            <option value="">Godown: All</option>
-            {opts.godown.map((g) => <option key={g} value={g}>{g}</option>)}
-          </select>
           <select value={division} onChange={(e) => setDivision(e.target.value)}>
             <option value="">Division: All</option>
             {opts.division.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -105,7 +112,7 @@ export default function PendingQty() {
           </select>
           <label className="chk"><input type="checkbox" checked={onlyLate} onChange={(e) => setOnlyLate(e.target.checked)} /> Late only</label>
           <label className="chk" title="Lines where current stock covers the pending qty"><input type="checkbox" checked={onlyStock} onChange={(e) => setOnlyStock(e.target.checked)} /> Stock available</label>
-          {anyFilter && <button className="btn ghost sm" onClick={() => { setQ(''); setGodown(''); setDivision(''); setCat(''); setBrand(''); setOnlyLate(false); setOnlyStock(false) }}>✕ Clear filters</button>}
+          {anyFilter && <button className="btn ghost sm" onClick={() => { setQ(''); setGodowns([]); setDivision(''); setCat(''); setBrand(''); setOnlyLate(false); setOnlyStock(false) }}>✕ Clear filters</button>}
           <span className="filter-count active">🔎 {filtered.length} / {(rows || []).length} lines</span>
         </div>
       </div>

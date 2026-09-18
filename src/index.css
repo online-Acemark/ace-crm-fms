@@ -385,6 +385,8 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .pq-party { min-width: 160px; max-width: 220px; }
 .pq-prod { min-width: 180px; max-width: 260px; }
 .pq-cat { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pq-godowns { align-items: center; }
+.godown-cell { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ================= Collection tab ================= */
 /* pehli baar dikhne wali help patti */

@@ -31,7 +31,13 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   const [fupOrder, setFupOrder] = useState(null)
   const [q, setQ] = useState('') // SO number ya party name se filter
   const [secKey, setSecKey] = useState(null) // kaunsa section tab khula hai (null = pehla non-empty)
+  const [fGodown, setFGodown] = useState('')
+  const [fSalesman, setFSalesman] = useState('')
   const today = new Date(); today.setHours(0, 0, 0, 0)
+
+  // filter options (godown OTD se comma-joined aa sakta hai — parts alag karo)
+  const godownOpts = useMemo(() => [...new Set(orders.flatMap((o) => String(o.godown || '').split(',').map((g) => g.trim()).filter(Boolean)))].sort(), [orders])
+  const salesmanOpts = useMemo(() => [...new Set(orders.map((o) => (o.salesman || '').trim()).filter(Boolean))].sort(), [orders])
 
   // Unconverted order ERP feed me ab bhi hai ya nahi? Last sync me update nahi hua
   // (synced_at sabse naye sync se 2h+ purana) = feed se hat gaya — cancel/reject ho sakta hai.
@@ -39,6 +45,8 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   const notInFeed = (o) => !!(o.synced_at && maxSync && (new Date(maxSync) - new Date(o.synced_at)) > 2 * 3600 * 1000)
 
   const matches = (o) => {
+    if (fGodown && !String(o.godown || '').includes(fGodown)) return false
+    if (fSalesman && (o.salesman || '').trim() !== fSalesman) return false
     const s = q.trim().toLowerCase()
     if (!s) return true
     return `${o.account_name} ${o.mobile_so_no} ${o.mobile_no || ''}`.toLowerCase().includes(s)
@@ -66,7 +74,7 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
     const t = {}
     for (const k of Object.keys(tasks)) t[k] = tasks[k].filter(({ o }) => matches(o))
     return t
-  }, [tasks, q])
+  }, [tasks, q, fGodown, fSalesman]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalTasks = SECTIONS.reduce((n, s) => n + tasks[s.key].length, 0)
   const shownTasks = SECTIONS.reduce((n, s) => n + filteredTasks[s.key].length, 0)
@@ -80,8 +88,16 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
         <p className="muted">Upar se neeche order me karo. Har section me likha hai KYA karna hai aur KAISE. Order number par click karo to pura detail khulega.</p>
         <div className="action-filter">
           <input className="search" placeholder="🔍 SO No / Party name se dhundo…" value={q} onChange={(e) => setQ(e.target.value)} />
-          {q && <>
-            <button className="btn ghost sm" onClick={() => setQ('')}>✕ Clear</button>
+          <select value={fGodown} onChange={(e) => setFGodown(e.target.value)} title="Godown-wise filter">
+            <option value="">Godown: All</option>
+            {godownOpts.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={fSalesman} onChange={(e) => setFSalesman(e.target.value)} title="Salesman-wise filter">
+            <option value="">Salesman: All</option>
+            {salesmanOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          {(q || fGodown || fSalesman) && <>
+            <button className="btn ghost sm" onClick={() => { setQ(''); setFGodown(''); setFSalesman('') }}>✕ Clear</button>
             <span className="filter-count active">🔎 {shownTasks} / {totalTasks} tasks</span>
           </>}
         </div>
@@ -107,9 +123,11 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
               <table className="cfg-tbl act-tbl">
                 <thead>
                   <tr>
-                    <th>SO No</th>
+                    <th title="Mobile app order number">MO SO No.</th>
+                    {sec.key !== 'confirm' && <th title="ERP SO number after conversion">SO No</th>}
                     <th>Party</th>
                     <th title="Account family — G (red) = Golden customer, first priority">Family</th>
+                    <th>Godown</th>
                     <th>Contact</th>
                     <th>Details</th>
                     <th>Delay</th>
@@ -126,6 +144,7 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                     return (
                       <tr key={o.mobile_so_no}>
                         <td><button className="link" onClick={() => setOpen(o)}><b>#{o.mobile_so_no}</b></button></td>
+                        {sec.key !== 'confirm' && <td><b>{o.sorder_no ?? <span className="muted">—</span>}</b></td>}
                         <td className="act-party"><b>{o.account_name}</b>
                           {c.contact_person && <span className="muted"> · {c.contact_person}</span>}
                           {changed.length > 0 && (
@@ -142,13 +161,14 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                               </span>
                             : <span className="muted">—</span>}
                         </td>
+                        <td className="small godown-cell" title={o.godown || ''}>{o.godown || <span className="muted">—</span>}</td>
                         <td>{o.mobile_no && <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">📞 {o.mobile_no}</a>}</td>
                         <td className="small">
                           {sec.key === 'confirm' && <>SO aaya: {fmtERP(o.mobile_so_created)}
                             {notInFeed(o)
                               ? <span className="conv-chip conv-gone" title="This order is missing from today's ERP data — it may have been cancelled or rejected. Verify in ERP.">⚠️ Not in ERP feed — cancelled/rejected? Verify in ERP</span>
                               : <span className="conv-chip" title="Order is in ERP but not yet converted to SO.">🟡 Not converted yet — convert in ERP</span>}</>}
-                          {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}{o.sorder_no != null && <> · SO No: <b>{o.sorder_no}</b></>}</>}
+                          {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}</>}
                           {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}{(o.bill_nos || []).length > 0 && <> · Bill No: <b>{(o.bill_nos || []).join(', ')}</b></>}</>}
                           {sec.key === 'payment' && (() => {
                             const overdueDays = pipe.payment?.planned ? Math.floor((Date.now() - new Date(pipe.payment.planned).getTime()) / 864e5) : 0

@@ -403,13 +403,14 @@ Deno.serve(async () => {
         : null;
       o.pay_last_date = lastPay;
 
-      // OTD: ready-for-delivery date + transporter + buyer ref
-      o.ready_for_delivery_date = null; o.despatch_through = null; o.buyer_ref = null;
+      // OTD: ready-for-delivery date + transporter + buyer ref + godown
+      o.ready_for_delivery_date = null; o.despatch_through = null; o.buyer_ref = null; o.godown = null;
       const otdRows = forOrder(otdIdx, o.sorder_no, o.account_name);
       if (otdRows.length) {
         o.ready_for_delivery_date = otdRows.map((r: any) => r.ReadyForDeliveryDate).filter(Boolean).sort().at(-1) || null;
         o.despatch_through = otdRows.map((r: any) => String(r.DespatchThrough || "").trim()).find(Boolean) || null;
         o.buyer_ref = otdRows.map((r: any) => String(r.BuyresRef || "").trim()).find(Boolean) || null;
+        o.godown = [...new Set(otdRows.map((r: any) => String(r.Godown || "").trim()).filter(Boolean))].join(", ") || null;
       }
 
       // PreClosed: is order ki cancel/short-close hui lines
