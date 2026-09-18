@@ -32,6 +32,11 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   const [q, setQ] = useState('') // SO number ya party name se filter
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
+  // Unconverted order ERP feed me ab bhi hai ya nahi? Last sync me update nahi hua
+  // (synced_at sabse naye sync se 2h+ purana) = feed se hat gaya — cancel/reject ho sakta hai.
+  const maxSync = useMemo(() => orders.reduce((m, o) => (o.synced_at && o.synced_at > m ? o.synced_at : m), ''), [orders])
+  const notInFeed = (o) => !!(o.synced_at && maxSync && (new Date(maxSync) - new Date(o.synced_at)) > 2 * 3600 * 1000)
+
   const matches = (o) => {
     const s = q.trim().toLowerCase()
     if (!s) return true
@@ -105,7 +110,10 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                           )}</td>
                         <td>{o.mobile_no && <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">📞 {o.mobile_no}</a>}</td>
                         <td className="small">
-                          {sec.key === 'confirm' && <>SO aaya: {fmtERP(o.mobile_so_created)}</>}
+                          {sec.key === 'confirm' && <>SO aaya: {fmtERP(o.mobile_so_created)}
+                            {notInFeed(o)
+                              ? <span className="conv-chip conv-gone" title="This order is missing from today's ERP data — it may have been cancelled or rejected. Verify in ERP.">⚠️ Not in ERP feed — cancelled/rejected? Verify in ERP</span>
+                              : <span className="conv-chip" title="Order is in ERP but not yet converted to SO.">🟡 Not converted yet — convert in ERP</span>}</>}
                           {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}</>}
                           {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}</>}
                           {sec.key === 'payment' && (() => {
