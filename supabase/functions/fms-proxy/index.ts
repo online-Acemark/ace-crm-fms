@@ -4,6 +4,7 @@
 const DEFAULTS: Record<string, string> = {
   so: "http://eksai12.ddns.net:8786/ek_api/telegramApi/MobileSO.ashx",
   stock: "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx",
+  pendqty: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/PendingQuantity.ashx",
 };
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
@@ -16,7 +17,7 @@ async function getSources(): Promise<Record<string, string>> {
     });
     const j = await r.json();
     const v = j?.[0]?.value || {};
-    return { so: v.so_url || DEFAULTS.so, stock: v.stock_url || DEFAULTS.stock };
+    return { so: v.so_url || DEFAULTS.so, stock: v.stock_url || DEFAULTS.stock, pendqty: v.pendqty_url || DEFAULTS.pendqty };
   } catch {
     return DEFAULTS;
   }

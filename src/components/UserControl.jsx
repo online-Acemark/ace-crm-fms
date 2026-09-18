@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 export const APP_TABS = [
   ['action', 'Today Work'],
   ['fms', 'FMS Grid'],
+  ['pendqty', 'Pending Qty'],
   ['coll', 'Collection'],
   ['score', 'Scoreboard'],
   ['stages', 'Stage Plan'],

@@ -335,9 +335,46 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .ost-cell .ost-badge { margin-left: 0; }
 .ost-cell .ost-repl { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
 .ost-note { color: var(--amber); margin-top: 2px; max-width: 420px; }
+/* Today Work: account family badge (G = Golden customer, red highlight) */
+.fam-badge { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 800; padding: 0 7px; border-radius: 8px; border: 1px solid var(--line); color: var(--muted); vertical-align: middle; }
+.fam-badge.fam-g { color: #fff; background: var(--red); border-color: var(--red); }
+
+/* Today Work: poori width use karo (1100px cap nahi) */
+.act-page { max-width: none; }
+
+/* Today Work: section tabs — click karo, wahi table dikhe */
+.act-sec-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 4px; }
+.sec-tab { display: flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--panel); cursor: pointer; font-size: 13px; font-weight: 600; color: inherit; white-space: nowrap; }
+.sec-tab:hover { border-color: var(--blue, #4a90d9); }
+.sec-tab.active { border-color: var(--blue, #4a90d9); background: color-mix(in srgb, var(--blue, #4a90d9) 12%, var(--panel)); }
+
+/* Today Work: har section ki table apne andar scroll kare (saare pending dikhein) */
+.sec-tbl-wrap { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 8px; margin-top: 10px; }
+.sec-tbl-wrap .cfg-tbl { min-width: 960px; margin-top: 0; }
+/* header scroll ke saath upar chipka rahe */
+.act-tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); white-space: nowrap; }
+.act-tbl td { vertical-align: top; }
+.act-tbl tbody tr:hover td { background: var(--hover); }
+.act-tbl .act-party { min-width: 220px; }
+.act-tbl .fam-cell { white-space: nowrap; }
+.act-tbl .fam-cell .fam-badge { margin-left: 0; }
+
 /* Today Work confirm section: convert kyu nahi hua — amber status chip */
 .conv-chip { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; color: var(--amber); border: 1px solid var(--amber); background: color-mix(in srgb, var(--amber) 10%, transparent); white-space: nowrap; }
 .conv-chip.conv-gone { background: color-mix(in srgb, var(--amber) 22%, transparent); }
+
+/* ================= Pending Qty tab ================= */
+.kpi-chip { font-size: 12.5px; padding: 7px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
+.kpi-chip.red { color: var(--red); border-color: var(--red); }
+.kpi-chip.green-k { color: var(--green); border-color: var(--green); }
+.chk { display: flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.pq-tbl { min-width: 1150px; }
+.pq-tbl thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); white-space: nowrap; }
+.pq-tbl td { vertical-align: top; }
+.pq-tbl tbody tr:hover td { background: var(--hover); }
+.pq-party { min-width: 160px; max-width: 220px; }
+.pq-prod { min-width: 180px; max-width: 260px; }
+.pq-cat { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ================= Collection tab ================= */
 /* pehli baar dikhne wali help patti */

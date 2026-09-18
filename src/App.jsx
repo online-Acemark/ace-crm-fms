@@ -7,6 +7,7 @@ import Scoreboard from './components/Scoreboard'
 import Collection from './components/Collection'
 import StageConfig from './components/StageConfig'
 import UserControl, { APP_TABS } from './components/UserControl'
+import PendingQty from './components/PendingQty'
 import { getColumns } from './lib/columns'
 
 function Login() {
@@ -161,6 +162,7 @@ export default function App() {
       <main>
         {tab === 'action' && <ActionCenter orders={orders} stages={stages} scoring={scoring} onChanged={loadAll} />}
         {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} partyInfo={partyInfo} stockTick={stockTick} booting={booting} onChanged={loadAll} />}
+        {tab === 'pendqty' && <PendingQty />}
         {tab === 'coll' && <Collection />}
         {tab === 'score' && <Scoreboard orders={orders} stages={stages} scoring={scoring} />}
         {tab === 'stages' && <StageConfig stages={stages} scoring={scoring} onChanged={loadAll} />}
