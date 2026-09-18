@@ -30,6 +30,7 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   const [open, setOpen] = useState(null)
   const [fupOrder, setFupOrder] = useState(null)
   const [q, setQ] = useState('') // SO number ya party name se filter
+  const [secKey, setSecKey] = useState(null) // kaunsa section tab khula hai (null = pehla non-empty)
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
   // Unconverted order ERP feed me ab bhi hai ya nahi? Last sync me update nahi hua
@@ -55,7 +56,9 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
       if (!isPaid(o) && !noFollowup(o) && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
       if (contactMissing(o) && !isPaid(o)) t.contact.push({ o, pipe })
     }
-    for (const k of Object.keys(t)) t[k].sort((a, b) => (b.d || 0) - (a.d || 0))
+    // G = Golden customer, pehli priority — har section me sabse upar; uske baad zyada delay wale
+    const isG = (o) => String(o.acc_family || '').trim().toUpperCase() === 'G'
+    for (const k of Object.keys(t)) t[k].sort((a, b) => (isG(b.o) - isG(a.o)) || ((b.d || 0) - (a.d || 0)))
     return t
   }, [orders, stages, scoring, today])
 
@@ -67,9 +70,11 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
 
   const totalTasks = SECTIONS.reduce((n, s) => n + tasks[s.key].length, 0)
   const shownTasks = SECTIONS.reduce((n, s) => n + filteredTasks[s.key].length, 0)
+  // click nahi kiya to pehla section jisme kaam pada hai
+  const activeKey = secKey || SECTIONS.find((s) => filteredTasks[s.key].length)?.key || SECTIONS[0].key
 
   return (
-    <div className="action-page">
+    <div className="action-page act-page">
       <div className="action-head">
         <h2>📌 Today Work — {totalTasks} pending</h2>
         <p className="muted">Upar se neeche order me karo. Har section me likha hai KYA karna hai aur KAISE. Order number par click karo to pura detail khulega.</p>
@@ -81,7 +86,15 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
           </>}
         </div>
       </div>
-      {SECTIONS.map((sec) => {
+      <div className="act-sec-tabs">
+        {SECTIONS.map((s) => (
+          <button key={s.key} className={activeKey === s.key ? 'sec-tab active' : 'sec-tab'} onClick={() => setSecKey(s.key)}>
+            {s.icon} {s.title.split('—')[0].trim()}
+            <span className={filteredTasks[s.key].length ? 'count-badge' : 'count-badge zero'}>{filteredTasks[s.key].length}</span>
+          </button>
+        ))}
+      </div>
+      {SECTIONS.filter((s) => s.key === activeKey).map((sec) => {
         const list = filteredTasks[sec.key]
         return (
           <div key={sec.key} className="panel action-sec">
@@ -90,9 +103,21 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
               <p className="muted small how">Kaise: {sec.how}</p>
             </div>
             {list.length === 0 ? <div className="all-done">{q && tasks[sec.key].length > 0 ? <span className="muted">🔍 filter me kuch nahi mila ({tasks[sec.key].length} hidden)</span> : '✅ Sab ho gaya!'}</div> : (
-              <table className="cfg-tbl">
+              <div className="sec-tbl-wrap">
+              <table className="cfg-tbl act-tbl">
+                <thead>
+                  <tr>
+                    <th>SO No</th>
+                    <th>Party</th>
+                    <th title="Account family — G (red) = Golden customer, first priority">Family</th>
+                    <th>Contact</th>
+                    <th>Details</th>
+                    <th>Delay</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {list.slice(0, 25).map(({ o, pipe, d, fupDue }) => {
+                  {list.map(({ o, pipe, d, fupDue }) => {
                     const c = resolveContact(o)
                     const wa = waLink(o.mobile_no, buildStatusMsg(o, pipe))
                     const due = paymentDue(o.billing_date, o.credit_days)
@@ -101,13 +126,22 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                     return (
                       <tr key={o.mobile_so_no}>
                         <td><button className="link" onClick={() => setOpen(o)}><b>#{o.mobile_so_no}</b></button></td>
-                        <td><b>{o.account_name}</b>{c.contact_person && <span className="muted"> · {c.contact_person}</span>}
+                        <td className="act-party"><b>{o.account_name}</b>
+                          {c.contact_person && <span className="muted"> · {c.contact_person}</span>}
                           {changed.length > 0 && (
                             <div className="ost-note small">
                               🔁 <b>Product changed at SO:</b> {changed.map((p) => `${p.name} (${Number(p.mqty) || 0}${p.munit ? ' ' + p.munit : ''})`).join(', ')}
                               {repl.length > 0 && <span className="muted"> · likely replaced by: {repl.map((r) => `${r.name} (${Number(r.mqty) || 0}→${Number(r.qty)})`).join(', ')}</span>}
                             </div>
                           )}</td>
+                        <td className="fam-cell">
+                          {String(o.acc_family || '').trim()
+                            ? <span className={String(o.acc_family).trim().toUpperCase() === 'G' ? 'fam-badge fam-g' : 'fam-badge'}
+                                title={String(o.acc_family).trim().toUpperCase() === 'G' ? 'Golden customer — first priority' : 'Account family'}>
+                                {String(o.acc_family).trim().toUpperCase() === 'G' ? '⭐ G' : String(o.acc_family).trim()}
+                              </span>
+                            : <span className="muted">—</span>}
+                        </td>
                         <td>{o.mobile_no && <a className="link" href={waLink(o.mobile_no)} target="_blank" rel="noreferrer">📞 {o.mobile_no}</a>}</td>
                         <td className="small">
                           {sec.key === 'confirm' && <>SO aaya: {fmtERP(o.mobile_so_created)}
@@ -134,9 +168,9 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                       </tr>
                     )
                   })}
-                  {list.length > 25 && <tr><td colSpan={6} className="muted small">…aur {list.length - 25} — filter use karo FMS Grid me</td></tr>}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         )
