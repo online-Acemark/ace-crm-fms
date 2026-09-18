@@ -114,8 +114,8 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                             {notInFeed(o)
                               ? <span className="conv-chip conv-gone" title="This order is missing from today's ERP data — it may have been cancelled or rejected. Verify in ERP.">⚠️ Not in ERP feed — cancelled/rejected? Verify in ERP</span>
                               : <span className="conv-chip" title="Order is in ERP but not yet converted to SO.">🟡 Not converted yet — convert in ERP</span>}</>}
-                          {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}</>}
-                          {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}</>}
+                          {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}{o.sorder_no != null && <> · SO No: <b>{o.sorder_no}</b></>}</>}
+                          {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}{(o.bill_nos || []).length > 0 && <> · Bill No: <b>{(o.bill_nos || []).join(', ')}</b></>}</>}
                           {sec.key === 'payment' && (() => {
                             const overdueDays = pipe.payment?.planned ? Math.floor((Date.now() - new Date(pipe.payment.planned).getTime()) / 864e5) : 0
                             const bucket = overdueDays > 30 ? 'bkt-30' : overdueDays > 7 ? 'bkt-8' : ''
