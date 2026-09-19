@@ -30,7 +30,7 @@ Deno.serve(async () => {
       return new Response(JSON.stringify({ ok: false, error: "fms_settings me key='telegram' set karo: { token, chat_id }" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const orders = await sb("fms_orders?select=mobile_so_no,account_name,mobile_no,acc_family,salesman,so_convert_date,billing_date,desp_date,credit_days,bill_net_amount,sorder_amount,payment_complete,next_followup_date,mobile_so_created,pay_status,payment_pending_erp");
+    const orders = await sb("fms_orders?select=mobile_so_no,account_name,mobile_no,acc_family,salesman,so_convert_date,billing_date,desp_date,credit_days,bill_net_amount,sorder_amount,payment_complete,next_followup_date,mobile_so_created,pay_status,payment_pending_erp&cancelled=eq.false");
     const now = nowIST();
     const noFup = (o: any) => String(o.acc_family || "").trim().toUpperCase() === "N";
     const paid = (o: any) => o.payment_complete || o.pay_status === "Full";

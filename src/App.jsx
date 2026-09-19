@@ -89,7 +89,8 @@ export default function App() {
       return
     }
     const [o, s, set, f, pi] = await Promise.all([
-      supabase.from('fms_orders').select('*').order('mobile_so_created', { ascending: false }),
+      // cancelled = ERP feed se hataye gaye orders — app me nahi dikhte (DB me history padi hai)
+      supabase.from('fms_orders').select('*').eq('cancelled', false).order('mobile_so_created', { ascending: false }),
       supabase.from('fms_stage_config').select('*').order('sort_order'),
       supabase.from('fms_settings').select('*').eq('key', 'scoring').maybeSingle(),
       supabase.from('fms_followups').select('mobile_so_no,remarks,created_at').order('created_at', { ascending: true }),

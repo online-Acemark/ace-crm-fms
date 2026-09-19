@@ -328,7 +328,7 @@ Deno.serve(async () => {
       sb("fms_settings?key=eq.erp&select=value"),
       sb("working_day_calender?select=working_date"),
       sb("holidays?select=holiday_date"),
-      sb("fms_orders?select=mobile_so_no,payment_complete,payment_date"),
+      sb("fms_orders?select=mobile_so_no,payment_complete,payment_date,billing_date"),
     ]);
     const scoring = scoringRow?.[0]?.value || {};
     const erpCfg = erpRow?.[0]?.value || {};
@@ -480,7 +480,8 @@ Deno.serve(async () => {
         sm.overdue_amt += pend; outstandingSum += pend;
       }
 
-      return { ...o, delays, score: scoreVal, synced_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      // feed me hai = active — pehle cancel hua tha to revive (cancelled wapas false)
+      return { ...o, cancelled: false, cancelled_at: null, delays, score: scoreVal, synced_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     });
 
     await sb("fms_orders?on_conflict=mobile_so_no", {
@@ -488,6 +489,29 @@ Deno.serve(async () => {
       headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify(payload),
     });
+
+    // ---- Cancelled orders (Option B): feed ke range ke andar hai par feed me NAHI = ERP me cancel ----
+    // Hide karo (cancelled=true), delete nahi — follow-up history bachi rahe.
+    // Safety: (1) window se purane orders kabhi flag nahi (wo history hain),
+    // (2) billed orders kabhi auto-cancel nahi, (3) feed adhura (<100 rows) to skip.
+    let cancelledMarked = 0;
+    try {
+      if (raw.length >= 100) {
+        const feedSet = new Set(aggregated.map((o: any) => Number(o.mobile_so_no)));
+        const minFeed = Math.min(...feedSet);
+        const gone = (existing || [])
+          .filter((e: any) => Number(e.mobile_so_no) >= minFeed && !feedSet.has(Number(e.mobile_so_no)) && !e.billing_date)
+          .map((e: any) => e.mobile_so_no);
+        if (gone.length) {
+          await sb(`fms_orders?mobile_so_no=in.(${gone.join(",")})&cancelled=eq.false`, {
+            method: "PATCH",
+            headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({ cancelled: true, cancelled_at: new Date().toISOString() }),
+          });
+          cancelledMarked = gone.length;
+        }
+      }
+    } catch (_e) { /* cancel-mark fail hone se sync nahi rukta */ }
 
     // ---- daily snapshot upsert: din bhar refresh hota hai, raat ka aakhri sync = us din ka final ----
     try {
@@ -512,7 +536,7 @@ Deno.serve(async () => {
       });
     } catch (_e) { /* snapshot fail hone se sync nahi rukta */ }
 
-    return new Response(JSON.stringify({ ok: true, synced: payload.length, at: new Date().toISOString() }), {
+    return new Response(JSON.stringify({ ok: true, synced: payload.length, cancelled_marked: cancelledMarked, at: new Date().toISOString() }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {

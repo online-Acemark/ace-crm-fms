@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     const now = nowIST();
 
     if (mode === "dispatch") {
-      const orders = await sb("fms_orders?select=mobile_so_no,account_name,salesman,billing_date,desp_date,bill_net_amount,sorder_amount&billing_date=not.is.null&desp_date=is.null");
+      const orders = await sb("fms_orders?select=mobile_so_no,account_name,salesman,billing_date,desp_date,bill_net_amount,sorder_amount&billing_date=not.is.null&desp_date=is.null&cancelled=eq.false");
       if (!orders.length) return new Response(JSON.stringify({ ok: true, sent: false, note: "koi dispatch pending nahi" }), { headers: { "Content-Type": "application/json" } });
       const L = [`DISPATCH REMINDER (2 PM) — 4 baje se pehle nikalna hai:`, ""];
       for (const o of orders.slice(0, 15)) L.push(`- #${o.mobile_so_no} | ${o.account_name} | ${inr(o.bill_net_amount || o.sorder_amount)} | ${o.salesman || ""}`);
@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
 
     // mode=instant
     const [orders, wd, hd, log] = await Promise.all([
-      sb("fms_orders?select=mobile_so_no,account_name,mobile_no,salesman,mobile_so_created,so_convert_date,sorder_amount,mobile_so_amount"),
+      sb("fms_orders?select=mobile_so_no,account_name,mobile_no,salesman,mobile_so_created,so_convert_date,sorder_amount,mobile_so_amount&cancelled=eq.false"),
       sb("working_day_calender?select=working_date"),
       sb("holidays?select=holiday_date"),
       sb("fms_alert_log?select=so_no,alert_type"),
