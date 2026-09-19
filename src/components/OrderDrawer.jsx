@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup, getStockMap } from '../lib/fms'
 import { toLocalInput } from './Grid'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -117,8 +117,15 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
             <ul className="prod-list">
               {(order.products || []).map((p, i) => {
                 const pc = (order.preclosed || []).find((x) => x.name === p.name)
+                const billed = p.bno != null
+                // Stock sirf billing-pending stage me kaam ka hai — billed line/order par nahi dikhta
+                const showStock = !billed && !order.billing_date
+                const s = showStock ? getStockMap()?.[String(p.code || '').trim().toLowerCase()] : null
+                // sirf BILLED row green highlight hoti hai — partial billing me ek nazar me dikhta hai
                 return (
-                  <li key={i}>{p.name} <span className="muted">({p.code}) — {p.qty ?? '—'} {p.unit || ''}{Number(p.pending) > 0 ? `, pending ${p.pending}` : ''}</span>
+                  <li key={i} className={billed ? 'pl-billed' : ''} title={billed && p.bno ? `Bill No: ${p.bno}` : ''}>
+                    {p.name} <span className="muted">({p.code}) — {p.qty ?? '—'} {p.unit || ''}{Number(p.pending) > 0 ? `, pending ${p.pending}` : ''}</span>
+                    {showStock && <span className="muted small"> · Stock: {s != null ? <><b>{s.total.toLocaleString('en-IN')}</b> {s.unit || ''}</> : '—'}</span>}
                     {pc && <span className="red-t small"> 🚫 Pre-closed · {pc.reset} qty · {pc.by}</span>}
                   </li>
                 )

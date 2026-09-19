@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue, changedLines } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue, changedLines, getStockMap } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 
@@ -10,7 +10,7 @@ const SECTIONS = [
   },
   {
     key: 'billing', icon: '🧾', title: 'Billing Pending — Billwise Me Bill Banao',
-    how: 'Billwise me invoice banwao (invoice number Billwise se aayega). Delay ho raha hai to dispatch team ko turant bolo.',
+    how: 'Billwise me invoice banwao (invoice number Billwise se aayega). Yahan sirf wo orders hain jinka STOCK available hai — bina stock wale is list me nahi aate. Delay ho raha hai to dispatch team ko turant bolo.',
   },
   {
     key: 'dispatch', icon: '🚚', title: 'Dispatch Due — Aaj Nikalna Hai',
@@ -30,17 +30,30 @@ const SECTIONS = [
   },
 ]
 
-export default function ActionCenter({ orders, stages, scoring, onChanged }) {
+export default function ActionCenter({ orders, stages, scoring, stockTick, onChanged }) {
   const [open, setOpen] = useState(null)
   const [fupOrder, setFupOrder] = useState(null)
   const [q, setQ] = useState('') // SO number ya party name se filter
   const [secKey, setSecKey] = useState(null) // kaunsa section tab khula hai (null = pehla non-empty)
-  const [fGodown, setFGodown] = useState('')
+  const [fGodowns, setFGodowns] = useState([]) // multi-select (canonical names) — khali = sab
   const [fSalesman, setFSalesman] = useState('')
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
-  // filter options (godown OTD se comma-joined aa sakta hai — parts alag karo)
-  const godownOpts = useMemo(() => [...new Set(orders.flatMap((o) => String(o.godown || '').split(',').map((g) => g.trim()).filter(Boolean)))].sort(), [orders])
+  // ERP me ek hi godown ke kai naam hain: 'Main (AS)', 'Main', 'Main(AP)' = Main;
+  // 'zBhatagaon(AS)', 'zbhatagaon' = Bhatagaon — merge karke ek option banate hain
+  const canonGodown = (g) => String(g || '').replace(/\(.*?\)/g, '').trim().replace(/^z/i, '').trim().toLowerCase()
+  const godownParts = (o) => String(o.godown || '').split(',').map((g) => g.trim()).filter(Boolean)
+
+  // filter options: canonical -> display label (pehla saaf naam)
+  const godownOpts = useMemo(() => {
+    const m = new Map()
+    for (const o of orders) for (const part of godownParts(o)) {
+      const c = canonGodown(part)
+      if (!c) continue
+      if (!m.has(c)) m.set(c, part.replace(/\(.*?\)/g, '').trim().replace(/^z/i, '').trim())
+    }
+    return [...m.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label))
+  }, [orders]) // eslint-disable-line react-hooks/exhaustive-deps
   const salesmanOpts = useMemo(() => [...new Set(orders.map((o) => (o.salesman || '').trim()).filter(Boolean))].sort(), [orders])
 
   // Unconverted order ERP feed me ab bhi hai ya nahi? Last sync me update nahi hua
@@ -49,7 +62,7 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   const notInFeed = (o) => !!(o.synced_at && maxSync && (new Date(maxSync) - new Date(o.synced_at)) > 2 * 3600 * 1000)
 
   const matches = (o) => {
-    if (fGodown && !String(o.godown || '').includes(fGodown)) return false
+    if (fGodowns.length && !godownParts(o).some((p) => fGodowns.includes(canonGodown(p)))) return false
     if (fSalesman && (o.salesman || '').trim() !== fSalesman) return false
     const s = q.trim().toLowerCase()
     if (!s) return true
@@ -69,13 +82,26 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
     return unbilled.some((p) => (pre[String(p.name || '').trim().toLowerCase()] || 0) < Number(p.qty))
   }
 
+  // Billing pending me sirf wo orders jinke unbilled items ka STOCK available hai —
+  // bina stock ke bill ban hi nahi sakta. Stock data abhi load na hua ho to sabko dikhao.
+  const stockOk = (o) => {
+    const sm = getStockMap()
+    if (!sm) return true
+    const unbilled = (o.products || []).filter((p) => Number(p.qty) > 0 && p.bno == null)
+    if (!unbilled.length) return true
+    return unbilled.every((p) => {
+      const s = sm[String(p.code || '').trim().toLowerCase()]
+      return s != null && s.total >= Number(p.qty)
+    })
+  }
+
   const tasks = useMemo(() => {
     const t = { confirm: [], billing: [], dispatch: [], hold: [], payment: [], contact: [] }
     for (const o of orders) {
       const pipe = computePipeline(o, stages, scoring)
       if (!o.so_convert_date) t.confirm.push({ o, pipe, d: pipe.so_convert?.delayH })
       else if (o.on_hold && !o.billing_date) t.hold.push({ o, pipe, d: null }) // HOLD — billing pending me nahi
-      else if (!o.billing_date && ['running', 'partial'].includes(pipe.billing?.status) && hasBillableLeft(o)) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
+      else if (!o.billing_date && ['running', 'partial'].includes(pipe.billing?.status) && hasBillableLeft(o) && stockOk(o)) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
       if (!o.on_hold && o.billing_date && !o.desp_date && ['running', 'pending', 'partial'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
       const fupDue = o.next_followup_date && new Date(o.next_followup_date) <= new Date()
       // Family N = No follow-up — payment list me mat dikhao; ERP Full-paid bhi bahar
@@ -86,13 +112,13 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
     const isG = (o) => String(o.acc_family || '').trim().toUpperCase() === 'G'
     for (const k of Object.keys(t)) t[k].sort((a, b) => (isG(b.o) - isG(a.o)) || ((b.d || 0) - (a.d || 0)))
     return t
-  }, [orders, stages, scoring, today])
+  }, [orders, stages, scoring, today, stockTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const filteredTasks = useMemo(() => {
     const t = {}
     for (const k of Object.keys(tasks)) t[k] = tasks[k].filter(({ o }) => matches(o))
     return t
-  }, [tasks, q, fGodown, fSalesman]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tasks, q, fGodowns, fSalesman]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalTasks = SECTIONS.reduce((n, s) => n + tasks[s.key].length, 0)
   const shownTasks = SECTIONS.reduce((n, s) => n + filteredTasks[s.key].length, 0)
@@ -105,17 +131,24 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
         <h2>📌 Today Work — {totalTasks} pending</h2>
         <p className="muted">Upar se neeche order me karo. Har section me likha hai KYA karna hai aur KAISE. Order number par click karo to pura detail khulega.</p>
         <div className="action-filter">
+          <div className="coll-presets pq-godowns">
+            <span className="muted small">Godown:</span>
+            <button className={!fGodowns.length ? 'preset-chip active' : 'preset-chip'} onClick={() => setFGodowns([])}>All</button>
+            {godownOpts.map((g) => (
+              <button key={g.key} className={fGodowns.includes(g.key) ? 'preset-chip active' : 'preset-chip'}
+                title="Click to select — multiple godowns can be selected together"
+                onClick={() => setFGodowns((cur) => cur.includes(g.key) ? cur.filter((x) => x !== g.key) : [...cur, g.key])}>
+                {fGodowns.includes(g.key) ? '✓ ' : ''}{g.label}
+              </button>
+            ))}
+          </div>
           <input className="search" placeholder="🔍 SO No / Party name se dhundo…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <select value={fGodown} onChange={(e) => setFGodown(e.target.value)} title="Godown-wise filter">
-            <option value="">Godown: All</option>
-            {godownOpts.map((g) => <option key={g} value={g}>{g}</option>)}
-          </select>
           <select value={fSalesman} onChange={(e) => setFSalesman(e.target.value)} title="Salesman-wise filter">
             <option value="">Salesman: All</option>
             {salesmanOpts.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {(q || fGodown || fSalesman) && <>
-            <button className="btn ghost sm" onClick={() => { setQ(''); setFGodown(''); setFSalesman('') }}>✕ Clear</button>
+          {(q || fGodowns.length > 0 || fSalesman) && <>
+            <button className="btn ghost sm" onClick={() => { setQ(''); setFGodowns([]); setFSalesman('') }}>✕ Clear</button>
             <span className="filter-count active">🔎 {shownTasks} / {totalTasks} tasks</span>
           </>}
         </div>
@@ -142,7 +175,11 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                 <thead>
                   <tr>
                     <th title="Mobile app order number">MO SO No.</th>
-                    {sec.key !== 'confirm' && <th title="ERP SO number after conversion">SO No</th>}
+                    {sec.key !== 'confirm' && (
+                      <th title={sec.key === 'dispatch' ? 'Bill number' : sec.key === 'payment' ? 'Invoice number' : 'ERP SO number after conversion'}>
+                        {sec.key === 'dispatch' ? 'Bill No' : sec.key === 'payment' ? 'Invoice No' : 'SO No'}
+                      </th>
+                    )}
                     <th>Party</th>
                     <th title="Account family — G (red) = Golden customer, first priority">Family</th>
                     <th>Godown</th>
@@ -162,7 +199,11 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                     return (
                       <tr key={o.mobile_so_no}>
                         <td><button className="link" onClick={() => setOpen(o)}><b>#{o.mobile_so_no}</b></button></td>
-                        {sec.key !== 'confirm' && <td><b>{o.sorder_no ?? <span className="muted">—</span>}</b></td>}
+                        {sec.key !== 'confirm' && (
+                          <td>{['dispatch', 'payment'].includes(sec.key)
+                            ? ((o.bill_nos || []).length ? <b>{(o.bill_nos || []).join(', ')}</b> : <span className="muted">—</span>)
+                            : <b>{o.sorder_no ?? <span className="muted">—</span>}</b>}</td>
+                        )}
                         <td className="act-party"><b>{o.account_name}</b>
                           {o.micro_order && <span className="fam-badge" title="Micro order — RetailerUnderMicroOrder list me hai">Micro</span>}
                           {c.contact_person && <span className="muted"> · {c.contact_person}</span>}
@@ -189,7 +230,7 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                               ? <span className="conv-chip conv-gone" title="This order is missing from today's ERP data — it may have been cancelled or rejected. Verify in ERP.">⚠️ Not in ERP feed — cancelled/rejected? Verify in ERP</span>
                               : <span className="conv-chip" title="Order is in ERP but not yet converted to SO.">🟡 Not converted yet — convert in ERP</span>}</>}
                           {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}</>}
-                          {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}{(o.bill_nos || []).length > 0 && <> · Bill No: <b>{(o.bill_nos || []).join(', ')}</b></>}</>}
+                          {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}</>}
                           {sec.key === 'hold' && <>SO bana: {fmtERP(o.so_convert_date)} · <b>₹{Number(o.sorder_amount || o.mobile_so_amount || 0).toLocaleString('en-IN')}</b>
                             <span className="conv-chip conv-gone" title="ERP me ye SO hold/pre-close status me hai — delay aur score me nahi ginta">⏸ On hold in ERP</span></>}
                           {sec.key === 'payment' && (() => {
