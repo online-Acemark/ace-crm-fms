@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue, changedLines, getStockMap } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
+import MultiSelect from './MultiSelect'
 
 const SECTIONS = [
   {
@@ -131,18 +132,8 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
         <h2>📌 Today Work — {totalTasks} pending</h2>
         <p className="muted">Upar se neeche order me karo. Har section me likha hai KYA karna hai aur KAISE. Order number par click karo to pura detail khulega.</p>
         <div className="action-filter">
-          <div className="coll-presets pq-godowns">
-            <span className="muted small">Godown:</span>
-            <button className={!fGodowns.length ? 'preset-chip active' : 'preset-chip'} onClick={() => setFGodowns([])}>All</button>
-            {godownOpts.map((g) => (
-              <button key={g.key} className={fGodowns.includes(g.key) ? 'preset-chip active' : 'preset-chip'}
-                title="Click to select — multiple godowns can be selected together"
-                onClick={() => setFGodowns((cur) => cur.includes(g.key) ? cur.filter((x) => x !== g.key) : [...cur, g.key])}>
-                {fGodowns.includes(g.key) ? '✓ ' : ''}{g.label}
-              </button>
-            ))}
-          </div>
           <input className="search" placeholder="🔍 SO No / Party name se dhundo…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <MultiSelect label="Godown" options={godownOpts} value={fGodowns} onChange={setFGodowns} />
           <select value={fSalesman} onChange={(e) => setFSalesman(e.target.value)} title="Salesman-wise filter">
             <option value="">Salesman: All</option>
             {salesmanOpts.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -151,6 +142,7 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
             <button className="btn ghost sm" onClick={() => { setQ(''); setFGodowns([]); setFSalesman('') }}>✕ Clear</button>
             <span className="filter-count active">🔎 {shownTasks} / {totalTasks} tasks</span>
           </>}
+          <button className="btn ghost sm" title="Print the open section's table" onClick={() => window.print()}>🖨 Print</button>
         </div>
       </div>
       <div className="act-sec-tabs">

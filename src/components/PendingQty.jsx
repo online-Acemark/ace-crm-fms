@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchERP } from '../lib/fms'
+import MultiSelect from './MultiSelect'
 
 // Pending Qty tab: ERP PendingQuantity.ashx — order-wise kaunsa item kitna pending hai
-const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })
 const num = (v) => Number(v) || 0
+const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })
+// ERP Date '17-09' (dd-mm, saal nahi deta) -> '17 Sep 26'; future nikle to pichhla saal
+const fmtDate = (v) => {
+  const m = /^(\d{1,2})-(\d{1,2})$/.exec(String(v || '').trim())
+  if (!m) return String(v || '—')
+  const dd = +m[1], mm = +m[2]
+  const now = new Date()
+  let y = now.getFullYear()
+  if (new Date(y, mm - 1, dd).getTime() > now.getTime() + 864e5) y -= 1
+  return new Date(y, mm - 1, dd).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+}
 
 export default function PendingQty() {
   const [rows, setRows] = useState(null)
@@ -11,7 +22,7 @@ export default function PendingQty() {
   const [q, setQ] = useState('')
   const [godowns, setGodowns] = useState([]) // multi-select: khali = sab
   const [division, setDivision] = useState('')
-  const [cat, setCat] = useState('')
+  const [cats, setCats] = useState([]) // category multi-select — khali = sab
   const [brand, setBrand] = useState('')
   const [onlyLate, setOnlyLate] = useState(false)
   const [onlyStock, setOnlyStock] = useState(false)
@@ -37,7 +48,7 @@ export default function PendingQty() {
     if (s) list = list.filter((r) => `${r.PartyName} ${r.ProductName} ${r.ProductCode} ${r.Number}`.toLowerCase().includes(s))
     if (godowns.length) list = list.filter((r) => godowns.includes(String(r.Godown || '').trim()))
     if (division) list = list.filter((r) => String(r.ProdDivision || '').trim() === division)
-    if (cat) list = list.filter((r) => String(r.BaseCat || '').trim() === cat)
+    if (cats.length) list = list.filter((r) => cats.includes(String(r.BaseCat || '').trim()))
     if (brand) list = list.filter((r) => String(r.ProdBrand || '').trim() === brand)
     if (onlyLate) list = list.filter((r) => num(r.Late) > 0)
     if (onlyStock) list = list.filter((r) => num(r.NetStock) >= num(r.Balance) && num(r.Balance) > 0)
@@ -48,7 +59,7 @@ export default function PendingQty() {
       const bv = ['PartyName', 'ProductName', 'Number'].includes(k) ? String(b[k] || '') : num(b[k])
       return (av < bv ? -1 : av > bv ? 1 : 0) * mul
     })
-  }, [rows, q, godowns, division, cat, brand, onlyLate, onlyStock, sort])
+  }, [rows, q, godowns, division, cats, brand, onlyLate, onlyStock, sort])
 
   const kpi = useMemo(() => {
     const list = filtered
@@ -67,7 +78,7 @@ export default function PendingQty() {
     </button>
   )
 
-  const anyFilter = q || godowns.length || division || cat || brand || onlyLate || onlyStock
+  const anyFilter = q || godowns.length || division || cats.length || brand || onlyLate || onlyStock
 
   if (rows === null) return <div className="action-page"><p className="muted">Loading pending quantity from ERP…</p></div>
 
@@ -86,34 +97,22 @@ export default function PendingQty() {
         </div>
 
         <div className="action-filter coll-filters">
-          <div className="coll-presets pq-godowns">
-            <span className="muted small">Godown:</span>
-            <button className={!godowns.length ? 'preset-chip active' : 'preset-chip'} onClick={() => setGodowns([])}>All</button>
-            {opts.godown.map((g) => (
-              <button key={g} className={godowns.includes(g) ? 'preset-chip active' : 'preset-chip'}
-                title="Click to select — multiple godowns can be selected together"
-                onClick={() => setGodowns((cur) => cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g])}>
-                {godowns.includes(g) ? '✓ ' : ''}{g}
-              </button>
-            ))}
-          </div>
           <input className="search" placeholder="🔍 Search party / product / code / order no…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <MultiSelect label="Godown" options={opts.godown} value={godowns} onChange={setGodowns} />
           <select value={division} onChange={(e) => setDivision(e.target.value)}>
             <option value="">Division: All</option>
             {opts.division.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
-          <select value={cat} onChange={(e) => setCat(e.target.value)}>
-            <option value="">Category: All</option>
-            {opts.cat.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <MultiSelect label="Category" options={opts.cat} value={cats} onChange={setCats} />
           <select value={brand} onChange={(e) => setBrand(e.target.value)}>
             <option value="">Brand: All</option>
             {opts.brand.map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
           <label className="chk"><input type="checkbox" checked={onlyLate} onChange={(e) => setOnlyLate(e.target.checked)} /> Late only</label>
           <label className="chk" title="Lines where current stock covers the pending qty"><input type="checkbox" checked={onlyStock} onChange={(e) => setOnlyStock(e.target.checked)} /> Stock available</label>
-          {anyFilter && <button className="btn ghost sm" onClick={() => { setQ(''); setGodowns([]); setDivision(''); setCat(''); setBrand(''); setOnlyLate(false); setOnlyStock(false) }}>✕ Clear filters</button>}
+          {anyFilter && <button className="btn ghost sm" onClick={() => { setQ(''); setGodowns([]); setDivision(''); setCats([]); setBrand(''); setOnlyLate(false); setOnlyStock(false) }}>✕ Clear filters</button>}
           <span className="filter-count active">🔎 {filtered.length} / {(rows || []).length} lines</span>
+          <button className="btn ghost sm" title="Print this table" onClick={() => window.print()}>🖨 Print</button>
         </div>
       </div>
 
@@ -142,7 +141,7 @@ export default function PendingQty() {
               return (
                 <tr key={i}>
                   <td><b>{r.Number}</b></td>
-                  <td className="small">{r.Date || '—'}</td>
+                  <td className="small">{fmtDate(r.Date)}</td>
                   <td className="pq-party"><b>{r.PartyName}</b></td>
                   <td className="pq-prod" title={`${r.ProductName} (${r.ProductCode || ''})`}>{r.ProductName}<div className="muted small">{r.ProductCode}</div></td>
                   <td className="small">{r.ProdBrand || '—'}</td>

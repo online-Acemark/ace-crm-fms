@@ -379,6 +379,17 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .conv-chip { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; color: var(--amber); border: 1px solid var(--amber); background: color-mix(in srgb, var(--amber) 10%, transparent); white-space: nowrap; }
 .conv-chip.conv-gone { background: color-mix(in srgb, var(--amber) 22%, transparent); }
 
+/* ============ Multi-select dropdown (checkbox filter) ============ */
+.ms-wrap { position: relative; }
+.ms-btn { font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--input-bg); color: var(--txt); cursor: pointer; white-space: nowrap; }
+.ms-btn.active { border-color: var(--blue, #4a90d9); font-weight: 700; }
+.ms-caret { font-size: 10px; opacity: .7; }
+.ms-back { position: fixed; inset: 0; z-index: 39; }
+.ms-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px; min-width: 240px; max-width: 340px; max-height: 280px; overflow: auto; box-shadow: 0 8px 24px #0003; }
+.ms-item { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 7px; cursor: pointer; font-size: 12.5px; }
+.ms-item:hover { background: var(--hover); }
+.ms-item input { width: 15px; height: 15px; cursor: pointer; flex: none; }
+
 /* ================= Pending Qty tab ================= */
 .kpi-chip { font-size: 12.5px; padding: 7px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); white-space: nowrap; }
 .kpi-chip.red { color: var(--red); border-color: var(--red); }
@@ -539,6 +550,23 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
   /* ---- follow-up modal: bottom sheet style ---- */
   .modal-back { padding: 8px; align-items: flex-end; }
   .modal { width: 100%; max-height: 92vh; border-radius: 14px 14px 0 0; padding: 14px; }
+}
+
+/* ===================================================== */
+/* ==================== PRINT ========================== */
+/* Today Work / Pending Order ke 🖨 Print se sirf khuli table print hoti hai */
+@media print {
+  .topbar, .toast, .action-filter, .act-sec-tabs, .coll-filters, .coll-kpis,
+  .sec-title .how, .legend, .demo-note { display: none !important; }
+  .app { height: auto; }
+  main { overflow: visible; padding: 0; }
+  .panel { border: none; box-shadow: none; padding: 0; }
+  .sec-tbl-wrap, .coll-list, .tbl-wrap { max-height: none !important; overflow: visible !important; border: none; }
+  .act-tbl, .pq-tbl { min-width: 0 !important; width: 100%; font-size: 10.5px; }
+  .act-tbl thead th, .pq-tbl thead th { position: static; }
+  .act-tbl td, .act-tbl th, .pq-tbl td, .pq-tbl th { padding: 3px 5px; }
+  .wa-btn, .fup-cell-btn { display: none !important; } /* print me buttons bekar hain */
+  a { text-decoration: none; color: inherit; }
 }
 
 /* chhote phones */

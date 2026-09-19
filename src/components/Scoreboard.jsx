@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase'
 import { computePipeline, computeScore, fmtDelay, isPaid } from '../lib/fms'
 
 export default function Scoreboard({ orders, stages, scoring }) {
-  const [q, setQ] = useState('') // account scoreboard me party/family se search
   const [hist, setHist] = useState([]) // fms_score_daily: pichhle 30 din ke snapshots (trend ke liye)
 
   useEffect(() => {
@@ -31,9 +30,8 @@ export default function Scoreboard({ orders, stages, scoring }) {
     return <span className="muted small" title={`Pichhle snapshot me ${prev}`}>▬</span>
   }
 
-  const { accounts, stageStats, salesmen } = useMemo(() => {
-    const accMap = new Map()
-    const smMap = new Map()
+  const { stageStats, families } = useMemo(() => {
+    const famMap = new Map()
     const stStats = {}
     for (const s of stages.filter((x) => x.active)) stStats[s.stage_key] = { name: s.stage_name, ontime: 0, late: 0, open: 0, totDelay: 0 }
     for (const o of orders) {
@@ -47,27 +45,20 @@ export default function Scoreboard({ orders, stages, scoring }) {
         else if (p.status === 'late') { st.late++; st.totDelay += p.delayH || 0 }
         else if (p.status === 'running') { st.open++; st.totDelay += p.delayH || 0 }
       }
-      const a = accMap.get(o.account_name) || { name: o.account_name, family: o.acc_family, orders: 0, amount: 0, scores: [], delayed: 0, payDue: 0 }
-      a.orders++
-      a.amount += Number(o.sorder_amount) || 0
-      if (score != null) a.scores.push(score)
-      if (isDelayed) a.delayed++
-      if (payRunning) a.payDue++
-      accMap.set(o.account_name, a)
-      // salesman-wise
-      const smKey = o.salesman || '—'
-      const sm = smMap.get(smKey) || { name: smKey, orders: 0, business: 0, scores: [], delayed: 0, overdueAmt: 0 }
-      sm.orders++
-      sm.business += Number(o.sorder_amount) || 0
-      if (score != null) sm.scores.push(score)
-      if (isDelayed) sm.delayed++
-      if (payRunning) sm.overdueAmt += o.payment_pending_erp != null ? Number(o.payment_pending_erp) : (Number(o.bill_net_amount) || 0)
-      smMap.set(smKey, sm)
+      // family-wise scoring (G = Golden, N = No follow-up, ...)
+      const famKey = String(o.acc_family || '').trim().toUpperCase() || '—'
+      const fm = famMap.get(famKey) || { family: famKey, accounts: new Set(), orders: 0, business: 0, scores: [], delayed: 0, payDue: 0 }
+      fm.accounts.add(o.account_name)
+      fm.orders++
+      fm.business += Number(o.sorder_amount) || 0
+      if (score != null) fm.scores.push(score)
+      if (isDelayed) fm.delayed++
+      if (payRunning) fm.payDue++
+      famMap.set(famKey, fm)
     }
     const avgOf = (arr) => arr.length ? Math.round(arr.reduce((x, y) => x + y, 0) / arr.length) : null
-    const accounts = [...accMap.values()].map((a) => ({ ...a, avg: avgOf(a.scores) })).sort((x, y) => (y.avg ?? -1) - (x.avg ?? -1))
-    const salesmen = [...smMap.values()].map((s) => ({ ...s, avg: avgOf(s.scores) })).sort((x, y) => (y.avg ?? -1) - (x.avg ?? -1))
-    return { accounts, stageStats: stStats, salesmen }
+    const families = [...famMap.values()].map((f) => ({ ...f, accCount: f.accounts.size, avg: avgOf(f.scores) })).sort((x, y) => (y.avg ?? -1) - (x.avg ?? -1))
+    return { stageStats: stStats, families }
   }, [orders, stages, scoring])
 
   const inr = (v) => '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -100,49 +91,22 @@ export default function Scoreboard({ orders, stages, scoring }) {
         {trendRef && <p className="muted small" style={{ marginTop: 8 }}>Trend {trendRef.day} ke snapshot se compare — roz raat ka score history apne aap save hota hai.</p>}
       </div>
       <div className="panel">
-        <h2>👤 Salesman Scoreboard</h2>
+        <h2>⭐ Family-wise Scoring</h2>
+        <p className="muted small">Account family ke hisaab se performance — G (Golden) sabse important hai.</p>
         <table className="cfg-tbl">
-          <thead><tr><th>#</th><th>Salesman</th><th>Orders</th><th>Business</th><th>Delayed</th><th>Overdue ₹</th><th>Score</th><th>7-din Trend</th></tr></thead>
+          <thead><tr><th>Family</th><th>Accounts</th><th>Orders</th><th>Business</th><th>Delayed</th><th>Pay Due</th><th>Avg Score</th></tr></thead>
           <tbody>
-            {salesmen.map((s, i) => (
-              <tr key={s.name}>
-                <td>{i + 1}</td>
-                <td><b>{s.name}</b></td>
-                <td>{s.orders}</td>
-                <td>{inr(s.business)}</td>
-                <td className={s.delayed ? 'red-t' : ''}>{s.delayed}</td>
-                <td className={s.overdueAmt ? 'amber-t' : ''}>{s.overdueAmt ? inr(s.overdueAmt) : '—'}</td>
-                <td>{s.avg == null ? '—' : <span className={`score ${s.avg >= 90 ? 'sc-g' : s.avg >= 70 ? 'sc-y' : 'sc-r'}`}>{s.avg}</span>}</td>
-                <td><TrendArrow now={s.avg} prev={trendRef?.salesmen?.[s.name]?.avg ?? null} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="panel">
-        <h2>🏆 Account Scoreboard</h2>
-        <div className="score-search">
-          <input className="search" placeholder="🔍 Party name / family se dhundo…" value={q} onChange={(e) => setQ(e.target.value)} />
-          {q && <>
-            <button className="btn ghost sm" onClick={() => setQ('')}>✕ Clear</button>
-            <span className="filter-count active">🔎 {accounts.filter((a) => `${a.name} ${a.family || ''}`.toLowerCase().includes(q.trim().toLowerCase())).length} / {accounts.length}</span>
-          </>}
-        </div>
-        <table className="cfg-tbl">
-          <thead><tr><th>#</th><th>Account</th><th>Family</th><th>Orders</th><th>Business</th><th>Delayed</th><th>Pay Due</th><th>Score</th></tr></thead>
-          <tbody>
-            {accounts.map((a, i) => ({ ...a, rank: i + 1 }))
-              .filter((a) => !q.trim() || `${a.name} ${a.family || ''}`.toLowerCase().includes(q.trim().toLowerCase()))
-              .map((a) => (
-              <tr key={a.name}>
-                <td>{a.rank}</td>
-                <td><b>{a.name}</b></td>
-                <td>{a.family || '—'}</td>
-                <td>{a.orders}</td>
-                <td>{inr(a.amount)}</td>
-                <td className={a.delayed ? 'red-t' : ''}>{a.delayed}</td>
-                <td className={a.payDue ? 'amber-t' : ''}>{a.payDue}</td>
-                <td>{a.avg == null ? '—' : <span className={`score ${a.avg >= 90 ? 'sc-g' : a.avg >= 70 ? 'sc-y' : 'sc-r'}`}>{a.avg}</span>}</td>
+            {families.map((f) => (
+              <tr key={f.family}>
+                <td>{f.family === 'G'
+                  ? <span className="fam-badge fam-g" title="Golden customer — first priority">⭐ G</span>
+                  : <span className="fam-badge">{f.family}</span>}</td>
+                <td>{f.accCount}</td>
+                <td>{f.orders}</td>
+                <td>{inr(f.business)}</td>
+                <td className={f.delayed ? 'red-t' : ''}>{f.delayed}</td>
+                <td className={f.payDue ? 'amber-t' : ''}>{f.payDue}</td>
+                <td>{f.avg == null ? '—' : <span className={`score ${f.avg >= 90 ? 'sc-g' : f.avg >= 70 ? 'sc-y' : 'sc-r'}`}>{f.avg}</span>}</td>
               </tr>
             ))}
           </tbody>
