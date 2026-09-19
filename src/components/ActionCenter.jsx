@@ -56,13 +56,26 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
     return `${o.account_name} ${o.mobile_so_no} ${o.mobile_no || ''}`.toLowerCase().includes(s)
   }
 
+  // Billing pending me wo order mat dikhao jiski SAARI unbilled lines PRE-CLOSED ho chuki hain
+  // (reset qty >= line qty) — unka bill kabhi banega hi nahi. Partial reset ho to dikhna chahiye.
+  const hasBillableLeft = (o) => {
+    const unbilled = (o.products || []).filter((p) => Number(p.qty) > 0 && p.bno == null)
+    if (!unbilled.length) return true // data adhura — safe side par list me rehne do
+    const pre = {}
+    for (const pc of (o.preclosed || [])) {
+      const k = String(pc.name || '').trim().toLowerCase()
+      pre[k] = (pre[k] || 0) + (Number(pc.reset) || 0)
+    }
+    return unbilled.some((p) => (pre[String(p.name || '').trim().toLowerCase()] || 0) < Number(p.qty))
+  }
+
   const tasks = useMemo(() => {
     const t = { confirm: [], billing: [], dispatch: [], hold: [], payment: [], contact: [] }
     for (const o of orders) {
       const pipe = computePipeline(o, stages, scoring)
       if (!o.so_convert_date) t.confirm.push({ o, pipe, d: pipe.so_convert?.delayH })
       else if (o.on_hold && !o.billing_date) t.hold.push({ o, pipe, d: null }) // HOLD — billing pending me nahi
-      else if (!o.billing_date && ['running', 'partial'].includes(pipe.billing?.status)) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
+      else if (!o.billing_date && ['running', 'partial'].includes(pipe.billing?.status) && hasBillableLeft(o)) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
       if (!o.on_hold && o.billing_date && !o.desp_date && ['running', 'pending', 'partial'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
       const fupDue = o.next_followup_date && new Date(o.next_followup_date) <= new Date()
       // Family N = No follow-up — payment list me mat dikhao; ERP Full-paid bhi bahar
