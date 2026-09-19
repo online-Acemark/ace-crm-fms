@@ -17,6 +17,10 @@ const SECTIONS = [
     how: '4 PM se pehle ke orders AAJ hi dispatch hone chahiye. Gate pass + transporter confirm karo, phir client ko 📤 Status bhejo.',
   },
   {
+    key: 'hold', icon: '⏸', title: 'On Hold — Roke Gaye Orders',
+    how: 'Ye orders ERP me jaan-boojh kar HOLD/pre-close kiye gaye hain — inko chase MAT karo. Order chalu karna ho to ERP me hold hatao; agle sync me apne aap Billing Pending me aa jayega.',
+  },
+  {
     key: 'payment', icon: '💰', title: 'Payment Follow-up — Aaj Call Karo',
     how: 'Client ko call karo, payment ki due date yaad dilao. Baat ho jaye to order kholke follow-up note + next date likho. Paisa aaye to amount entry karo.',
   },
@@ -53,12 +57,13 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
   }
 
   const tasks = useMemo(() => {
-    const t = { confirm: [], billing: [], dispatch: [], payment: [], contact: [] }
+    const t = { confirm: [], billing: [], dispatch: [], hold: [], payment: [], contact: [] }
     for (const o of orders) {
       const pipe = computePipeline(o, stages, scoring)
       if (!o.so_convert_date) t.confirm.push({ o, pipe, d: pipe.so_convert?.delayH })
+      else if (o.on_hold && !o.billing_date) t.hold.push({ o, pipe, d: null }) // HOLD — billing pending me nahi
       else if (!o.billing_date && ['running', 'partial'].includes(pipe.billing?.status)) t.billing.push({ o, pipe, d: pipe.billing?.delayH })
-      if (o.billing_date && !o.desp_date && ['running', 'pending', 'partial'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
+      if (!o.on_hold && o.billing_date && !o.desp_date && ['running', 'pending', 'partial'].includes(pipe.dispatch?.status)) t.dispatch.push({ o, pipe, d: pipe.dispatch?.delayH })
       const fupDue = o.next_followup_date && new Date(o.next_followup_date) <= new Date()
       // Family N = No follow-up — payment list me mat dikhao; ERP Full-paid bhi bahar
       if (!isPaid(o) && !noFollowup(o) && (pipe.payment?.status === 'running' || fupDue)) t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
@@ -146,7 +151,9 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                         <td><button className="link" onClick={() => setOpen(o)}><b>#{o.mobile_so_no}</b></button></td>
                         {sec.key !== 'confirm' && <td><b>{o.sorder_no ?? <span className="muted">—</span>}</b></td>}
                         <td className="act-party"><b>{o.account_name}</b>
+                          {o.micro_order && <span className="fam-badge" title="Micro order — RetailerUnderMicroOrder list me hai">Micro</span>}
                           {c.contact_person && <span className="muted"> · {c.contact_person}</span>}
+                          {o.so_remark && <div className="so-remark small" title={o.so_remark}>💬 {o.so_remark}</div>}
                           {changed.length > 0 && (
                             <div className="ost-note small">
                               🔁 <b>Product changed at SO:</b> {changed.map((p) => `${p.name} (${Number(p.mqty) || 0}${p.munit ? ' ' + p.munit : ''})`).join(', ')}
@@ -170,6 +177,8 @@ export default function ActionCenter({ orders, stages, scoring, onChanged }) {
                               : <span className="conv-chip" title="Order is in ERP but not yet converted to SO.">🟡 Not converted yet — convert in ERP</span>}</>}
                           {sec.key === 'billing' && <>Confirm hua: {fmtERP(o.so_convert_date)}</>}
                           {sec.key === 'dispatch' && <>Bill bana: {fmtERP(o.billing_date)}{(o.bill_nos || []).length > 0 && <> · Bill No: <b>{(o.bill_nos || []).join(', ')}</b></>}</>}
+                          {sec.key === 'hold' && <>SO bana: {fmtERP(o.so_convert_date)} · <b>₹{Number(o.sorder_amount || o.mobile_so_amount || 0).toLocaleString('en-IN')}</b>
+                            <span className="conv-chip conv-gone" title="ERP me ye SO hold/pre-close status me hai — delay aur score me nahi ginta">⏸ On hold in ERP</span></>}
                           {sec.key === 'payment' && (() => {
                             const overdueDays = pipe.payment?.planned ? Math.floor((Date.now() - new Date(pipe.payment.planned).getTime()) / 864e5) : 0
                             const bucket = overdueDays > 30 ? 'bkt-30' : overdueDays > 7 ? 'bkt-8' : ''

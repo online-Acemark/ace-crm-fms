@@ -131,6 +131,8 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
                 {order.buyer_ref && <> · Ref: {order.buyer_ref}</>}
               </p>
             )}
+            {order.on_hold && <p className="small amber-t" style={{ marginTop: 6 }}><b>⏸ On hold in ERP</b> — order roka gaya hai, delay/score me nahi ginta</p>}
+            {order.so_remark && <p className="small" style={{ marginTop: 6 }}>💬 <b>Salesman remark:</b> {order.so_remark}</p>}
             {(order.inv_urls || []).length > 0 && <>
               <h3>🧾 Invoices</h3>
               {(order.inv_urls || []).map((u, i) => <a key={i} className="link" href={u} target="_blank" rel="noreferrer">Invoice PDF {i + 1}</a>)}

@@ -7,6 +7,8 @@ const ERP_DEFAULTS = {
   payment: "http://eksai12.ddns.net:8786/ek_api/telegramApi/Payment.ashx",
   otd: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/OrderToDelivery.ashx",
   preclosed: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/PreClosedOrder.ashx",
+  hold: "http://eksai12.ddns.net:8786/ek_api/telegramApi/PreclosedHoldorder.ashx",
+  micro: "http://eksai12.ddns.net:8786/ek_api/telegramApi/RetailerUnderMicroOrder.ashx",
 };
 const IST = 5.5 * 3600 * 1000; // function UTC me chalta hai; ERP dates IST wall-clock naked strings hain
 const H = 3600 * 1000;
@@ -282,6 +284,8 @@ function computePipeline(o: any, stages: any[], scoring: any) {
       if (actual) {
         delayH = Math.max(0, (actual.getTime() - planned.getTime()) / H);
         status = delayH <= (scoring?.grace_hours ?? 1) ? "ontime" : "late";
+      } else if (o.on_hold && ["billing", "gpout", "dispatch"].includes(st.stage_key)) {
+        status = "hold"; // order HOLD par hai — delay/score me nahi ginta
       } else if (stagePartialSrv(o, st.stage_key)) {
         status = "partial"; // delay blank
       } else if (now > planned) {
@@ -305,7 +309,7 @@ function computeScore(pipe: Record<string, any>, scoring: any) {
   let wsum = 0, total = 0, counted = 0;
   for (const k of Object.keys(pipe)) {
     const p = pipe[k];
-    if (p.status === "na" || p.status === "pending" || p.status === "partial") continue;
+    if (p.status === "na" || p.status === "pending" || p.status === "partial" || p.status === "hold") continue;
     let pts;
     if (p.status === "ontime" || (p.status === "done" && !p.delayH)) pts = s.on_time_points;
     else pts = Math.min(s.on_time_points, Math.max(s.min_points, s.on_time_points - (p.delayH - s.grace_hours) * s.penalty_per_hour));
@@ -368,6 +372,29 @@ Deno.serve(async () => {
       pcIdx = prows2.length ? buildSoIdx(prows2, "SOrderNo") : null;
     } catch { pcIdx = null; }
 
+    // PreclosedHoldorder: HOLD par rakhe SOs — billing pending/score me nahi ginenge
+    let holdSet = new Set<number>();
+    try {
+      const hres = await fetch(erpCfg.hold_url || ERP_DEFAULTS.hold, { signal: AbortSignal.timeout(120000) });
+      const hjson = await hres.json();
+      const hrows = Array.isArray(hjson) ? hjson : hjson?.DataRec || [];
+      holdSet = new Set(hrows.map((r: any) => Number(r.MobileAppSoNo)).filter((n: number) => n > 0));
+    } catch { holdSet = new Set(); }
+
+    // RetailerUnderMicroOrder: micro-flag + salesman ka remark (delivery instruction)
+    const microMap = new Map<number, string>();
+    try {
+      const mres = await fetch(erpCfg.micro_url || ERP_DEFAULTS.micro, { signal: AbortSignal.timeout(120000) });
+      const mjson = await mres.json();
+      const mrows = Array.isArray(mjson) ? mjson : mjson?.DataRec || [];
+      for (const r of mrows) {
+        const so = Number(r.MobileAppSoNo);
+        if (!so) continue;
+        const rem = String(r.Remark || "").trim();
+        if (!microMap.has(so) || (rem && !microMap.get(so))) microMap.set(so, rem);
+      }
+    } catch { /* micro data optional */ }
+
     const res = await fetch(ERP_SO, { signal: AbortSignal.timeout(120000) });
     const json = await res.json();
     const raw = Array.isArray(json) ? json : json?.DataRec || [];
@@ -412,6 +439,11 @@ Deno.serve(async () => {
         o.buyer_ref = otdRows.map((r: any) => String(r.BuyresRef || "").trim()).find(Boolean) || null;
         o.godown = [...new Set(otdRows.map((r: any) => String(r.Godown || "").trim()).filter(Boolean))].join(", ") || null;
       }
+
+      // Hold + micro flags (computePipeline se PEHLE — hold stage-status ispe depend karta hai)
+      o.on_hold = holdSet.has(Number(o.mobile_so_no));
+      o.micro_order = microMap.has(Number(o.mobile_so_no));
+      o.so_remark = microMap.get(Number(o.mobile_so_no)) || null;
 
       // PreClosed: is order ki cancel/short-close hui lines
       const pcRows = forOrder(pcIdx, o.sorder_no, o.account_name).filter((r: any) => Number(r.Qty_Reset) > 0);

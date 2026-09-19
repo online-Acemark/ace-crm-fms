@@ -8,7 +8,7 @@ const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN',
 
 function StageCell({ p, sk, partial, actAlert }) {
   if (!p) return <td className={`stage-cell na ${sk} stg-first`} colSpan={3}>—</td>
-  const cls = { ontime: 'ok', late: 'late', running: 'run', pending: 'pend', done: 'ok', na: 'na', partial: 'pend' }[p.status]
+  const cls = { ontime: 'ok', late: 'late', running: 'run', pending: 'pend', done: 'ok', na: 'na', partial: 'pend', hold: 'pend' }[p.status]
   return (<>
     <td className={`sub pln ${cls} ${sk} stg-first`}>{fmtDT(p.planned)}</td>
     <td className={`sub act ${cls} ${sk}`}>
@@ -16,11 +16,12 @@ function StageCell({ p, sk, partial, actAlert }) {
         ? (actAlert
           ? <span className="red-t" title="⚠ Dispatch ki date GP Out se PEHLE ki hai — ERP data check karo"><b>{fmtDT(p.actual)}</b></span>
           : fmtDT(p.actual))
+        : p.status === 'hold' ? <span className="amber-t" title="Order ERP me HOLD/pre-close par hai — delay aur score me nahi ginta"><b>⏸ Hold</b></span>
         : partial ? <span className="amber-t" title={`${partial.left} item ka kaam abhi baaki hai — partial me delay count nahi hota`}><b>🟡 Partial</b> · {fmtERP(partial.date)}</span>
         : (p.status === 'running' ? '⏳ pending' : p.status === 'partial' ? '⏳ pending' : '—')}
     </td>
-    {/* partial me delay BLANK — count nahi hota */}
-    <td className={`sub dly ${cls} ${sk}`}>{p.status === 'partial' ? '' : p.delayH != null ? (p.status === 'ontime' || p.status === 'done' ? '✔ ' : '') + fmtDelay(p.delayH) : (p.status === 'ontime' ? '✔' : p.status === 'pending' ? '·' : '—')}</td>
+    {/* partial/hold me delay BLANK — count nahi hota */}
+    <td className={`sub dly ${cls} ${sk}`}>{p.status === 'partial' || p.status === 'hold' ? '' : p.delayH != null ? (p.status === 'ontime' || p.status === 'done' ? '✔ ' : '') + fmtDelay(p.delayH) : (p.status === 'ontime' ? '✔' : p.status === 'pending' ? '·' : '—')}</td>
   </>)
 }
 

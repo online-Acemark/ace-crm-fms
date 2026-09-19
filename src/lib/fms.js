@@ -405,6 +405,8 @@ export function computePipeline(o, stages, scoring) {
       if (actual) {
         delayH = Math.max(0, (actual - planned) / H)
         status = delayH <= (scoring?.grace_hours ?? 1) ? 'ontime' : 'late'
+      } else if (o.on_hold && ['billing', 'gpout', 'dispatch'].includes(st.stage_key)) {
+        status = 'hold' // order HOLD/pre-close par hai — delay count nahi, score me nahi
       } else if (stagePartial(o, st.stage_key)) {
         status = 'partial' // kuch items ho gaye — delay count nahi, blank
       } else if (now > planned) {
@@ -428,7 +430,7 @@ export function computeScore(pipe, scoring) {
   let wsum = 0, total = 0, counted = 0
   for (const k of Object.keys(pipe)) {
     const p = pipe[k]
-    if (p.status === 'na' || p.status === 'pending' || p.status === 'partial') continue
+    if (p.status === 'na' || p.status === 'pending' || p.status === 'partial' || p.status === 'hold') continue
     let pts
     if (p.status === 'ontime' || (p.status === 'done' && !p.delayH)) pts = s.on_time_points
     else pts = Math.min(s.on_time_points, Math.max(s.min_points, s.on_time_points - (p.delayH - s.grace_hours) * s.penalty_per_hour))
