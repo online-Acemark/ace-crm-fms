@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
+import MultiSelect from './MultiSelect'
 
 // Collection tab: poore ledger ka party-wise outstanding (fms_collection, har ghante ERP se sync)
 // Design goal: naya CRM executive bina training ke chala le — sabse zaroori party UPAR,
@@ -114,6 +115,16 @@ function PartyDetail({ p, demo, onSaved }) {
   const wa = waLink(p.mobile, buildCollectionMsg(p))
   const overdueBills = (p.bills || []).filter((b) => (b.od || 0) > 0)
 
+  // bills table ke filters: firm-wise + aging-wise (dono multi-select)
+  const [fFirms, setFFirms] = useState([])
+  const [fAges, setFAges] = useState([])
+  const AGE_OPTS = ['1-30', '31-60', '61-90', '91-120', '121-150', '151-180', '180+']
+  const ageBucket = (od) => od <= 30 ? '1-30' : od <= 60 ? '31-60' : od <= 90 ? '61-90' : od <= 120 ? '91-120' : od <= 150 ? '121-150' : od <= 180 ? '151-180' : '180+'
+  const firmOpts = [...new Set(overdueBills.map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
+  const shownBills = overdueBills.filter((b) =>
+    (!fFirms.length || fFirms.includes(String(b.company || '').trim())) &&
+    (!fAges.length || fAges.includes(ageBucket(b.od || 0))))
+
   return (
     <div className="coll-detail">
       <div className="coll-fup">
@@ -171,11 +182,19 @@ function PartyDetail({ p, demo, onSaved }) {
       <div className="coll-bills">
         {/* sirf DUE/OVERDUE bills dikhate hain — jo abhi credit period ke andar hain wo exclude */}
         <h4>🧾 Overdue bills ({overdueBills.length} of {(p.bills || []).length} pending)</h4>
+        <div className="coll-bill-filters">
+          <MultiSelect label="Firm" options={firmOpts} value={fFirms} onChange={setFFirms} />
+          <MultiSelect label="Aging" options={AGE_OPTS.map((a) => ({ key: a, label: a + ' days' }))} value={fAges} onChange={setFAges} />
+          {(fFirms.length > 0 || fAges.length > 0) && <>
+            <button className="btn ghost sm" onClick={() => { setFFirms([]); setFAges([]) }}>✕ Clear</button>
+            <span className="filter-count active">🔎 {shownBills.length} / {overdueBills.length} bills</span>
+          </>}
+        </div>
         <div className="tbl-wrap-inner">
           <table className="cfg-tbl coll-bill-tbl">
             <thead><tr><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th>Pending</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th></tr></thead>
             <tbody>
-              {overdueBills.slice(0, 100).map((b, i) => (
+              {shownBills.slice(0, 100).map((b, i) => (
                 <tr key={i} className={b.od > 180 ? 'coll-old' : ''}>
                   <td><b>{b.vno || '—'}</b></td>
                   <td className="small">{b.company || '—'}</td>
@@ -192,8 +211,11 @@ function PartyDetail({ p, demo, onSaved }) {
               {!overdueBills.length && (
                 <tr><td colSpan={8} className="muted">No overdue bills — all pending bills are still within their credit period.</td></tr>
               )}
-              {overdueBills.length > 100 && (
-                <tr><td colSpan={8} className="muted small">…and {overdueBills.length - 100} more overdue bills (oldest 100 shown above)</td></tr>
+              {overdueBills.length > 0 && !shownBills.length && (
+                <tr><td colSpan={8} className="muted">No bills match this filter.</td></tr>
+              )}
+              {shownBills.length > 100 && (
+                <tr><td colSpan={8} className="muted small">…and {shownBills.length - 100} more overdue bills (oldest 100 shown above)</td></tr>
               )}
             </tbody>
           </table>

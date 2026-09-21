@@ -473,6 +473,7 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .coll-fup { display: grid; grid-template-columns: 1.8fr 1fr; gap: 16px; }
 .fup-log { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
 .fup-log-item { font-size: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 5px; }
+.coll-bill-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .tbl-wrap-inner { overflow-x: auto; }
 .coll-bill-tbl { font-size: 12px; min-width: 680px; }
 .coll-bill-tbl th { text-align: left; }
