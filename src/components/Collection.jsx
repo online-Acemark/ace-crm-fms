@@ -169,12 +169,13 @@ function PartyDetail({ p, demo, onSaved }) {
         </div>
       </div>
       <div className="coll-bills">
-        <h4>🧾 Pending bills ({(p.bills || []).length}{overdueBills.length ? ` — ${overdueBills.length} overdue` : ''})</h4>
+        {/* sirf DUE/OVERDUE bills dikhate hain — jo abhi credit period ke andar hain wo exclude */}
+        <h4>🧾 Overdue bills ({overdueBills.length} of {(p.bills || []).length} pending)</h4>
         <div className="tbl-wrap-inner">
           <table className="cfg-tbl coll-bill-tbl">
             <thead><tr><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th>Pending</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th></tr></thead>
             <tbody>
-              {(p.bills || []).slice(0, 100).map((b, i) => (
+              {overdueBills.slice(0, 100).map((b, i) => (
                 <tr key={i} className={b.od > 180 ? 'coll-old' : ''}>
                   <td><b>{b.vno || '—'}</b></td>
                   <td className="small">{b.company || '—'}</td>
@@ -188,8 +189,11 @@ function PartyDetail({ p, demo, onSaved }) {
                   <td className="small coll-notes" title={b.notes || ''}>{b.notes || '—'}</td>
                 </tr>
               ))}
-              {(p.bills || []).length > 100 && (
-                <tr><td colSpan={8} className="muted small">…and {(p.bills || []).length - 100} more bills (oldest 100 shown above)</td></tr>
+              {!overdueBills.length && (
+                <tr><td colSpan={8} className="muted">No overdue bills — all pending bills are still within their credit period.</td></tr>
+              )}
+              {overdueBills.length > 100 && (
+                <tr><td colSpan={8} className="muted small">…and {overdueBills.length - 100} more overdue bills (oldest 100 shown above)</td></tr>
               )}
             </tbody>
           </table>
