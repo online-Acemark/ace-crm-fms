@@ -73,9 +73,12 @@ export function buildStatusMsg(o, pipe) {
 // SO qty mobile qty se badhi hai, change usi me merge hua hoga (replacement guess).
 export function changedLines(o) {
   const all = o._soProducts || o.products || []
-  const changed = all.filter((p) => p.ostatus && p.ostatus !== 'OK')
+  // sirf EXACT 'Product changed at SO' = changed. ERP ab 'Not converted' bhi bhejta hai
+  // (unconverted orders ki har line par) — wo change NAHI hai, bas convert pending hai.
+  const isChanged = (p) => String(p.ostatus || '').trim().toLowerCase() === 'product changed at so'
+  const changed = all.filter(isChanged)
   if (!changed.length) return { changed: [], repl: [] }
-  const repl = all.filter((p) => (!p.ostatus || p.ostatus === 'OK') && Number(p.qty || 0) > Number(p.mqty || 0))
+  const repl = all.filter((p) => !isChanged(p) && Number(p.qty || 0) > Number(p.mqty || 0))
   return { changed, repl }
 }
 

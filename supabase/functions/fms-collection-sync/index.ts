@@ -47,6 +47,9 @@ Deno.serve(async () => {
     const pfRows = Array.isArray(pf) ? pf : pf?.DataRec || [];
     const ugRows = Array.isArray(ug) ? ug : ug?.DataRec || [];
     if (!pfRows.length && !ugRows.length) throw new Error("dono APIs se 0 rows — sync skip");
+    // Urgent API bhaari hai (6MB+) — ERP busy ho to 0 rows de deta hai. Us round me
+    // summary-only data se DETAILED bills overwrite mat karo; agla sync fresh le aayega.
+    if (pfRows.length && !ugRows.length) throw new Error("UrgentPaymentFollow se 0 rows — purana detailed data rakha, ye round skip");
 
     const runAt = new Date().toISOString();
     const map = new Map<string, any>();
@@ -72,7 +75,8 @@ Deno.serve(async () => {
         last_pay_amt: num(r.LastPayAmt) || null,
         last_pay_date: dmy(r.LastPayDate),
         aging: {},
-        bills: amts.map((a, i) => ({ amt: a, date: dates[i] || null, days: days[i] || null })),
+        // pending bhi bharo — agar kabhi ye summary-shape hi dikhe to UI me Rs.0 na aaye
+        bills: amts.map((a, i) => ({ amt: a, pending: a, date: dates[i] || null, days: days[i] || null })),
         has_pdc: false,
         synced_at: runAt,
       });

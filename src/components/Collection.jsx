@@ -179,8 +179,10 @@ function PartyDetail({ p, demo, onSaved }) {
                   <td><b>{b.vno || '—'}</b></td>
                   <td className="small">{b.company || '—'}</td>
                   <td>{dmy(b.date)}</td>
-                  <td>{b.od > 0 ? <span className={b.od > 90 ? 'red-t' : 'amber-t'}><b>{b.od} days overdue</b></span> : <span className="muted small">{b.days != null ? `${b.days} days (not due yet)` : '—'}</span>}</td>
-                  <td><b>{inr(b.pending)}</b></td>
+                  {/* summary-shape bill (vno nahi) me sirf bill ki umar pata hoti hai — "not due yet" mat likho */}
+                  <td>{b.od > 0 ? <span className={b.od > 90 ? 'red-t' : 'amber-t'}><b>{b.od} days overdue</b></span>
+                    : <span className="muted small">{b.days != null ? (b.vno ? `${b.days} days (not due yet)` : `${b.days} days old`) : '—'}</span>}</td>
+                  <td><b>{inr(b.pending ?? b.amt)}</b></td>
                   <td className="small">{b.pdc_rcpt || b.pdc_date ? `✅ ${b.pdc_rcpt || ''} ${dmy(b.pdc_date)}` : '—'}</td>
                   <td className="small">{b.bilty || '—'}</td>
                   <td className="small coll-notes" title={b.notes || ''}>{b.notes || '—'}</td>

@@ -121,8 +121,10 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
     return t
   }, [tasks, q, fGodowns, fSalesman]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const totalTasks = SECTIONS.reduce((n, s) => n + tasks[s.key].length, 0)
-  const shownTasks = SECTIONS.reduce((n, s) => n + filteredTasks[s.key].length, 0)
+  // Contact Data Adhura asli "kaam" nahi hai — header ke total me nahi ginta
+  const countable = SECTIONS.filter((s) => s.key !== 'contact')
+  const totalTasks = countable.reduce((n, s) => n + tasks[s.key].length, 0)
+  const shownTasks = countable.reduce((n, s) => n + filteredTasks[s.key].length, 0)
   // click nahi kiya to pehla section jisme kaam pada hai
   const activeKey = secKey || SECTIONS.find((s) => filteredTasks[s.key].length)?.key || SECTIONS[0].key
 

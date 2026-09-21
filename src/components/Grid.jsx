@@ -406,23 +406,29 @@ export default function Grid({ orders, stages, columns, scoring, fupCounts, part
                       return <td key={c.col_key} className="item-cell muted">{ps.length ? ps.length + ' items' : '—'}</td>
                     }
                     case 'order_status': {
-                      // ERP ka OrderStatus: 'OK' ya 'Product changed at SO' (SO convert ke time item badla/hata).
-                      // Replacement ERP nahi batata — hint: usi order me jin lines ki SO qty mobile se badhi.
+                      // ERP ka OrderStatus: 'OK', 'Product changed at SO' (item badla/hata) ya
+                      // 'Not converted' (order abhi convert nahi hua — koi change nahi).
                       const ps = o.products || []
                       if (!ps.length) return <td key={c.col_key} className="muted">—</td>
+                      const stOf = (p) => String(p.ostatus || '').trim().toLowerCase()
                       const { changed, repl } = changedLines(o)
                       const replTxt = repl.map((r) => `${r.name} (${Number(r.mqty) || 0}→${Number(r.qty)})`).join(', ')
                       if (ps.length === 1) {
-                        const st = ps[0].ostatus
+                        const st = stOf(ps[0])
                         if (!st) return <td key={c.col_key} className="muted">—</td>
-                        if (st === 'OK') return <td key={c.col_key}><span className="ost-badge ost-ok">OK</span></td>
+                        if (st === 'not converted') return <td key={c.col_key} className="muted small">Not converted</td>
+                        if (st !== 'product changed at so') return <td key={c.col_key}><span className="ost-badge ost-ok">OK</span></td>
                         return <td key={c.col_key} className="ost-cell">
-                          <span className="ost-badge ost-chg" title={st}>🔁 Changed</span>
+                          <span className="ost-badge ost-chg" title={ps[0].ostatus}>🔁 Changed</span>
                           {repl.length > 0 && <div className="muted small ost-repl" title={`Possibly replaced by (SO qty increased): ${replTxt}`}>→ {repl[0].name}{repl.length > 1 ? ` +${repl.length - 1}` : ''}</div>}
                         </td>
                       }
                       if (!ps.some((p) => p.ostatus)) return <td key={c.col_key} className="muted">—</td>
-                      if (!changed.length) return <td key={c.col_key}><span className="ost-badge ost-ok">OK</span></td>
+                      if (!changed.length) {
+                        return ps.some((p) => stOf(p) === 'not converted')
+                          ? <td key={c.col_key} className="muted small">Not converted</td>
+                          : <td key={c.col_key}><span className="ost-badge ost-ok">OK</span></td>
+                      }
                       return <td key={c.col_key} className="ost-cell">
                         <span className="ost-badge ost-chg" title={`Changed: ${changed.map((p) => `${p.name} (${Number(p.mqty) || 0}${p.munit ? ' ' + p.munit : ''})`).join(', ')}`}>🔁 {changed.length} changed</span>
                         <div className="muted small ost-repl" title={changed.map((p) => p.name).join(', ') + (repl.length ? ` | Possibly replaced by: ${replTxt}` : '')}>
