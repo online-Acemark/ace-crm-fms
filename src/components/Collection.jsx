@@ -141,7 +141,7 @@ function PartyDetail({ p, demo, onSaved }) {
                     onClick={() => logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder')}>📤 Send WhatsApp</a>}
                   {!p.mobile && <span className="muted small">No mobile number — ask salesman {p.salesman || ''}</span>}
                 </div>
-                <p className="muted small">Ask: "Total {inrShort(p.total_pending)} is pending{p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"</p>
+                <p className="muted small" title={`Ask: "Total ${inrShort(p.total_pending)} is pending${p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"`}>Ask: "Total {inrShort(p.total_pending)} is pending{p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"</p>
               </div>
             </div>
             <div className="coll-step">
