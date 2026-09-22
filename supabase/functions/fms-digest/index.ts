@@ -90,18 +90,88 @@ Deno.serve(async () => {
       }
     }
 
-    // ---- pura ledger outstanding (fms_collection se) ----
+    // ---- pura ledger outstanding (fms_collection se) + Collection follow-up system ----
+    let collCounts: Record<string, number> = {};
     try {
-      const col = await sb("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging");
+      const col = await sb("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging,next_followup_date,permanent_note");
       if (col?.length) {
-        const tot = col.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
-        const old180 = col.reduce((a: number, p: any) => a + Number(p.aging?.b180p || 0), 0);
+        const live = col.filter((p: any) => !p.permanent_note);   // permanent note = worklist se bahar
+        const tot = live.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
+        const old180 = live.reduce((a: number, p: any) => a + Number(p.aging?.b180p || 0), 0);
         L.push("");
-        L.push(`LEDGER OUTSTANDING (sab firms): ${inr(tot)} | ${col.length} parties | 180+ din purana: ${inr(old180)}`);
-        const oldest = [...col].sort((a: any, b: any) => (b.oldest_od || 0) - (a.oldest_od || 0)).slice(0, 10);
+        L.push(`LEDGER OUTSTANDING (sab firms): ${inr(tot)} | ${live.length} parties | 180+ din purana: ${inr(old180)}`);
+
+        // --- follow-up log (fms_followups, party-level) -> Missed / Aaj due / Broken promise / kal ka kaam ---
+        // Rules app (Collection tab) jaise: aaj call log ya last stage "CRM Support" -> Missed nahi; "Close" -> list se bahar.
+        const fups: any[] = [];
+        for (let off = 0; ; off += 1000) {
+          const page = await sb(`fms_followups?select=party_name,stage,mode,amount_received,committed_amount,committed_date,created_at,created_by&party_name=not.is.null&order=created_at.desc&limit=1000&offset=${off}`);
+          if (!page?.length) break;
+          fups.push(...page);
+          if (page.length < 1000) break;
+        }
+        const norm = (v: unknown) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+        const iso = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+        const todayISO = iso(now);
+        const yISO = iso(new Date(now.getTime() - 864e5));
+        type Ag = { seen: boolean; lastStage: string; doneToday: boolean; committed: any; recvAfter: boolean };
+        const ag = new Map<string, Ag>();
+        let yDone = 0, yRecv = 0; const yUsers: Record<string, number> = {};
+        for (const f of fups) {          // created_at DESC: pehle naya, phir purana
+          const k = norm(f.party_name); if (!k || f.mode === "whatsapp") continue;
+          let a = ag.get(k);
+          if (!a) { a = { seen: false, lastStage: "", doneToday: false, committed: null, recvAfter: false }; ag.set(k, a); }
+          const dt = d(f.created_at); const day = dt ? iso(dt) : "";
+          if (!a.seen) { a.seen = true; a.lastStage = String(f.stage || ""); }
+          if (day === todayISO) a.doneToday = true;
+          if (day === yISO) {
+            yDone++; const u = String(f.created_by || "").split("@")[0] || "?"; yUsers[u] = (yUsers[u] || 0) + 1;
+            if (Number(f.amount_received) > 0) yRecv += Number(f.amount_received);
+          }
+          if (!a.committed) {
+            if (Number(f.amount_received) > 0) a.recvAfter = true;   // commitment se NAYA received entry
+            if (f.committed_date) a.committed = { amount: Number(f.committed_amount) || 0, date: String(f.committed_date) };
+          }
+        }
+        const missed: any[] = [], dueToday: any[] = [], broken: any[] = [];
+        for (const p of live) {
+          const a = ag.get(norm(p.party_name)) || { lastStage: "", doneToday: false, committed: null, recvAfter: false };
+          if (a.lastStage === "Close") continue;
+          if (a.committed && !a.recvAfter && a.committed.date < todayISO) broken.push({ ...p, c: a.committed });
+          const nd = p.next_followup_date ? iso(d(p.next_followup_date) as Date) : "";
+          if (!nd) continue;
+          if (nd < todayISO) { if (!a.doneToday && a.lastStage !== "CRM Support") missed.push({ ...p, nd }); }
+          else if (nd === todayISO) dueToday.push(p);
+        }
+        missed.sort((a, b) => Number(b.total_pending) - Number(a.total_pending));
+        broken.sort((a, b) => b.c.amount - a.c.amount);
+        const stuck = missed.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
+        collCounts = { missed: missed.length, dueToday: dueToday.length, broken: broken.length, yDone, yRecv };
+        const dm = (s: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? `${m[3]}/${m[2]}` : s; };
+
+        L.push("");
+        L.push("COLLECTION FOLLOW-UP:");
+        L.push(`- Missed follow-up: ${missed.length} parties | atka ${inr(stuck)}`);
+        L.push(`- Aaj due: ${dueToday.length} parties`);
+        L.push(`- Promise tuta (broken): ${broken.length}`);
+        const users = Object.entries(yUsers).sort((a, b) => b[1] - a[1]).map(([u, n]) => `${u} ${n}`).join(", ");
+        L.push(`- Kal ka kaam: ${yDone} follow-up${users ? " (" + users + ")" : ""} | received ${inr(yRecv)}`);
+        if (broken.length) {
+          L.push(`BROKEN PROMISE (${broken.length}):`);
+          for (const p of broken.slice(0, 5)) L.push(`- ${p.party_name} | wada ${inr(p.c.amount)} tak ${dm(p.c.date)} | baaki ${inr(p.total_pending)} | ${p.salesman || ""}`);
+          if (broken.length > 5) L.push(`  ...aur ${broken.length - 5}`);
+        }
+        if (missed.length) {
+          L.push(`MISSED FOLLOW-UP (${missed.length}):`);
+          for (const p of missed.slice(0, 8)) L.push(`- ${p.party_name} | due tha ${dm(p.nd)} | baaki ${inr(p.total_pending)} | ${p.salesman || ""}`);
+          if (missed.length > 8) L.push(`  ...aur ${missed.length - 8}`);
+        }
+
+        const oldest = [...live].sort((a: any, b: any) => (b.oldest_od || 0) - (a.oldest_od || 0)).slice(0, 10);
+        L.push("");
         L.push("TOP 10 SABSE PURANE BAKAYA:");
         for (const p of oldest) L.push(`- ${p.oldest_od}d | ${p.party_name} | ${inr(p.total_pending)} | ${p.salesman || ""}`);
-        const crossed = col.filter((p: any) => Number(p.credit_limit) > 0 && Number(p.total_pending) > Number(p.credit_limit));
+        const crossed = live.filter((p: any) => Number(p.credit_limit) > 0 && Number(p.total_pending) > Number(p.credit_limit));
         if (crossed.length) {
           const top = crossed.sort((a: any, b: any) => Number(b.total_pending) - Number(a.total_pending)).slice(0, 5);
           L.push(`CREDIT LIMIT CROSS (${crossed.length} parties):`);
@@ -122,7 +192,7 @@ Deno.serve(async () => {
     const tgJson = await tgRes.json();
     if (!tgJson.ok) throw new Error("Telegram: " + JSON.stringify(tgJson));
 
-    return new Response(JSON.stringify({ ok: true, sent: true, counts: { confirm: confirmPending.length, billing: billingPending.length, dispatch: dispatchDue.length, overdue: overdue.length, fupToday: fupToday.length } }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ ok: true, sent: true, counts: { confirm: confirmPending.length, billing: billingPending.length, dispatch: dispatchDue.length, overdue: overdue.length, fupToday: fupToday.length, ...collCounts } }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
