@@ -1,6 +1,6 @@
 // Collection / My Parties shared UI bits: aging chips, limit bar, stage/bucket pills, timeline, ERP receipts.
 import { useState } from 'react'
-import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, inrShort, dmy, dmyt, userName } from '../lib/coll'
+import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, inrShort, dmy, dmyt, userName, avaColor, initials } from '../lib/coll'
 
 export function AgingChips({ aging }) {
   const a = aging || {}
@@ -84,3 +84,99 @@ export function Receipts({ list }) {
   )
 }
 
+
+// ---------- next-level UI bits: avatar, party cell, stat strip, tabs, chips, toast, mobile cards ----------
+export const Avatar = ({ name, size = 30 }) => <span className="ava" style={{ background: avaColor(name), width: size, height: size, fontSize: Math.round(size * 0.38) }}>{initials(name)}</span>
+
+// Party cell: avatar + naam + meta (salesman · city · mobile) + tags (PDC, transfer)
+export function PartyCell({ p, ag, showSalesman = true, me = '' }) {
+  const meta = [showSalesman ? p.salesman : null, p.city].filter(Boolean).join(' · ')
+  return (
+    <div className="pcell">
+      <Avatar name={p.party_name} />
+      <div className="pcell-b">
+        <div className="pcell-n">{p.party_name}</div>
+        <div className="pcell-m">
+          {meta}{meta && p.mobile ? ' · ' : ''}{p.mobile && <a href={`tel:${p.mobile}`} onClick={(e) => e.stopPropagation()}>{p.mobile}</a>}
+          {p.has_pdc && <span className="tag tag-pdc">🧾 PDC</span>}
+          {ag?.transferTo && <span className="tag tag-xfer" title={'Transferred: ' + (ag.transferReason || '')}>↪ {me && ag.transferTo === me ? 'to you' : ag.transferTo}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Compact stat strip (modal header ke neeche): [{ l, v, s, cls, hint }]
+export const StatStrip = ({ items }) => (
+  <div className="stat-strip">
+    {items.map((i, k) => (
+      <div key={k} className={`stat ${i.cls || ''}`} title={i.hint || ''}>
+        <span className="stat-l">{i.l}</span>
+        <b className="stat-v">{i.v}</b>
+        {i.s ? <span className="stat-s">{i.s}</span> : null}
+      </div>
+    ))}
+  </div>
+)
+
+export const Tabs = ({ tabs, active, onChange }) => (
+  <div className="tabs" role="tablist">
+    {tabs.map((t) => (
+      <button key={t.key} role="tab" className={active === t.key ? 'tabbtn on' : 'tabbtn'} onClick={() => onChange(t.key)}>
+        {t.label}{t.n != null && <span className="tab-n">{t.n}</span>}
+      </button>
+    ))}
+  </div>
+)
+
+// Filter chip with count badge; 0 count = dim
+export const Chip = ({ label, n, active, onClick, tone = '' }) => (
+  <button className={`chip ${tone} ${active ? 'on' : ''} ${n === 0 ? 'dim' : ''}`} onClick={onClick}>
+    {label}{n != null && <b className="chip-n">{n}</b>}
+  </button>
+)
+
+export const Toast = ({ msg }) => msg ? <div className="coll-toast" role="status">{msg}</div> : null
+
+
+// "Start here" banner: sabse zaroori party
+export function NextUp({ e, onOpen }) {
+  if (!e) return null
+  const { p, pr } = e
+  return (
+    <div className={`nextup ${pr.cls}`}>
+      <Avatar name={p.party_name} size={36} />
+      <div className="nextup-b">
+        <div className="nextup-t">Start here: <b>{p.party_name}</b> <span className={`pr-badge ${pr.cls}`}>{pr.label}</span></div>
+        <div className="muted small">{pr.hint} · pending <b>{inrShort(p.total_pending)}</b>{p.oldest_od ? ` · oldest ${p.oldest_od} days` : ''}{p.mobile ? ` · ${p.mobile}` : ''}</div>
+      </div>
+      <button className="btn primary sm" onClick={() => onOpen(p.party_name)}>Open →</button>
+    </div>
+  )
+}
+
+export const Skeleton = ({ rows = 6 }) => (
+  <div className="skel-wrap">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skel" style={{ width: `${70 + ((i * 13) % 30)}%` }} />)}</div>
+)
+
+// Mobile card (phone par table ki jagah)
+export function PartyCard({ e, me, showSalesman, onOpen, actions }) {
+  const { p, ag, pr, bucket, broken } = e
+  return (
+    <div className={`pcard ${pr.cls}`} onClick={() => onOpen(p.party_name)}>
+      <div className="pcard-top">
+        <span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span>
+        <BucketPill b={bucket} date={p.next_followup_date} />
+      </div>
+      <PartyCell p={p} ag={ag} showSalesman={showSalesman} me={me} />
+      <div className="pcard-nums">
+        <div><span className="muted small">Pending</span><b>{inrShort(p.total_pending)}</b><span className="muted small">{p.bill_count} bills</span></div>
+        <div><span className="muted small">Oldest</span><b className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}>{p.oldest_od ? p.oldest_od + 'd' : '—'}</b></div>
+        <div><span className="muted small">Promise</span>{ag.committed ? <b className={broken ? 'red-t' : ''}>{inrShort(ag.committed.amount)}<span className="muted small"> {broken ? '💔' : 'by'} {dmy(ag.committed.date)}</span></b> : <b className="muted">—</b>}</div>
+      </div>
+      <AgingChips aging={p.aging} />
+      {(ag.lastStage || ag.last) && <div className="pcard-last">{ag.lastStage && <StageChip s={ag.lastStage} />}{ag.last && <span className="muted small">{dmy(ag.last.created_at)} · {userName(ag.last.created_by)}{ag.last.remarks ? ' — ' + ag.last.remarks : ''}</span>}</div>}
+      <div className="pcard-act" onClick={(ev) => ev.stopPropagation()}>{actions}</div>
+    </div>
+  )
+}

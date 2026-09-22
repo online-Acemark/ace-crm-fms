@@ -1,4 +1,5 @@
 // Collection / My Parties shared helpers: formatting, follow-up buckets, aggregation, priority, paging.
+import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 
 export const BUCKETS = [
@@ -183,4 +184,19 @@ export function summarize(items, cfg = SCORE_DEFAULTS) {
   r.avgLate = r.late ? Math.round((r.lateDays / r.late) * 10) / 10 : 0
   r.score = r.scored ? Math.round((r.points / (r.scored * c.on_time_points)) * 100) : null
   return r
+}
+
+// ---------- UI helpers (avatar colour/initials, mobile hook) ----------
+const AVA = ['#6a5fe8', '#0f8a64', '#d2683e', '#c2497e', '#2a7fc9', '#8a6ee0', '#b88414', '#3f9e8a']
+export function avaColor(s) { let h = 0; s = String(s || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return AVA[h % AVA.length] }
+export function initials(s) { const w = String(s || '?').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] || '?').toUpperCase() + (w.length > 1 ? (w[1][0] || '').toUpperCase() : '') }
+export function useIsMobile(bp = 760) {
+  const q = `(max-width: ${bp}px)`
+  const [m, setM] = useState(() => (typeof window !== 'undefined' && window.matchMedia ? window.matchMedia(q).matches : false))
+  useEffect(() => {
+    if (!window.matchMedia) return
+    const mq = window.matchMedia(q); const h = (e) => setM(e.matches)
+    mq.addEventListener('change', h); return () => mq.removeEventListener('change', h)
+  }, [q])
+  return m
 }

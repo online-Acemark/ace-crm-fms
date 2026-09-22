@@ -58,7 +58,12 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - Row click expands: overdue bills (tick to link), ERP receipts, history, and the **commitment form**
   (promised amount + date + remark) -> `fms_followups` stage Committed; CRM's next follow-up date is
   pulled to the promised day if it was blank or later.
-- Shared helpers live in `src/lib/coll.js`, shared UI bits in `src/components/CollBits.jsx`.
+- Shared helpers live in `src/lib/coll.js`, shared UI bits in `src/components/CollBits.jsx`
+  (avatar/party cell, stat strip, tabs, chips with counts, toast, next-up banner, mobile cards).
+- UI: filter chips show live counts, "Start here" banner picks the top-priority party, table has a
+  sticky header + priority accent, party modal = stat strip + action bar + tabs (Bills / Receipts /
+  History), follow-up form uses a stage picker + quick next-date buttons. Under 760px both tabs
+  switch from table to cards with big Call / WhatsApp buttons.
 
 ## Collection follow-up scoring (Scoreboard tab)
 - Every follow-up entry stores its plan (`fms_followups.next_followup_date`). The next non-WhatsApp
