@@ -190,6 +190,8 @@ export default function Salesman({ user, access }) {
     return list
   }, [enriched, q, chip])
 
+  const openE = useMemo(() => enriched.find((e) => e.p.party_name === open) || null, [enriched, open])
+
   if (rows === null) return <div className="action-page"><p className="muted">Loading your parties…</p></div>
 
   return (
@@ -248,10 +250,9 @@ export default function Salesman({ user, access }) {
               {filtered.slice(0, 200).map((e) => {
                 const { p, ag, pr, bucket, broken } = e
                 const wa = waLink(p.mobile, buildCollectionMsg(p))
-                const isOpen = open === p.party_name
                 const r0 = ag.receipts[0]
-                return [
-                  <tr key={p.party_name} className={isOpen ? 'coll-row sm-open' : 'coll-row'} onClick={() => setOpen(isOpen ? null : p.party_name)}>
+                return (
+                  <tr key={p.party_name} className="coll-row" onClick={() => setOpen(p.party_name)}>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><span className="coll-party"><b>{p.party_name}</b></span><div className="muted small">{[p.city, p.mobile].filter(Boolean).join(' · ')}{p.salesman !== me && ag.transferTo === me && <span className="xfer-tag">↪ transferred to you</span>}</div></td>
                     <td><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></td>
@@ -264,20 +265,39 @@ export default function Salesman({ user, access }) {
                     <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>
                       {p.mobile && <a className="btn ghost sm" href={`tel:${p.mobile}`} title={`Call ${p.mobile}`}>📞</a>}
                       {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer" title="WhatsApp reminder" onClick={() => { logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder'); setTimeout(() => setTick((t) => t + 1), 800) }}>📤</a>}
-                      <button className="btn primary sm" title="Save the party's commitment" onClick={() => setOpen(isOpen ? null : p.party_name)}>🤝 Commit</button>
+                      <button className="btn primary sm" title="Open party — bills, history, commitment" onClick={() => setOpen(p.party_name)}>🤝 Commit</button>
                     </td>
-                  </tr>,
-                  isOpen && (
-                    <tr key={p.party_name + '#x'} className="sm-expand"><td colSpan={10}>
-                      <PartyPanel p={p} ag={ag} demo={demo} onSaved={() => setTick((t) => t + 1)} />
-                    </td></tr>
-                  ),
-                ]
+                  </tr>
+                )
               })}
               {!filtered.length && <tr><td colSpan={10} className="muted">{enriched.length ? 'No party matches this filter.' : `No pending parties under ${me}.`}</td></tr>}
               {filtered.length > 200 && <tr><td colSpan={10} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {openE && (
+        <div className="modal-back" onClick={() => setOpen(null)}>
+          <div className="modal coll-modal" onClick={(ev) => ev.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <h3>{openE.p.party_name} <span className={`pr-badge ${openE.pr.cls}`} title={openE.pr.hint}>{openE.pr.label}</span> <BucketPill b={openE.bucket} date={openE.p.next_followup_date} /></h3>
+                <p className="muted small coll-modal-sub">
+                  {[openE.p.city, openE.p.mobile].filter(Boolean).join(' · ')}
+                  {' · '}Total pending <b>{inrShort(openE.p.total_pending)}</b> ({openE.p.bill_count} bills)
+                  {openE.p.oldest_od ? <> · oldest <b>{openE.p.oldest_od} days</b></> : null}
+                </p>
+                <div className="coll-actbar" style={{ marginTop: 6 }}>
+                  {openE.p.mobile && <a className="btn primary sm" href={`tel:${openE.p.mobile}`}>📞 Call {openE.p.mobile}</a>}
+                  {waLink(openE.p.mobile, buildCollectionMsg(openE.p)) && <a className="wa-btn" href={waLink(openE.p.mobile, buildCollectionMsg(openE.p))} target="_blank" rel="noreferrer"
+                    onClick={() => { logWaSendParty(openE.p.party_name, 'Sent WhatsApp payment reminder'); setTimeout(() => setTick((t) => t + 1), 800) }}>📤 Send WhatsApp</a>}
+                </div>
+              </div>
+              <button className="btn ghost" onClick={() => setOpen(null)}>✕ Close</button>
+            </div>
+            <PartyPanel key={openE.p.party_name} p={openE.p} ag={openE.ag} demo={demo} onSaved={() => setTick((t) => t + 1)} />
+          </div>
         </div>
       )}
     </div>

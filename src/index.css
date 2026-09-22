@@ -568,8 +568,6 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .coll-fup { grid-template-columns: 1.4fr 1fr; }
 /* My Parties (salesman tab): inline expand + commitment form */
 .sm-tbl { min-width: 1100px; }
-.sm-open td { background: color-mix(in srgb, var(--blue) 8%, transparent); }
-.sm-expand td { background: var(--bg); padding: 10px 14px; cursor: default; }
 .sm-panel { display: grid; grid-template-columns: 1.5fr 1fr; gap: 14px; }
 .sm-panel h4 { margin: 0 0 6px; font-size: 12.5px; }
 .sm-bill-tbl { min-width: 0; }
