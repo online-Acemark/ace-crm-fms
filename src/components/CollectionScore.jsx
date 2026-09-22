@@ -44,7 +44,7 @@ export default function CollectionScore() {
   const thisWeek = weekKey(new Date())
 
   return (
-    <div className="panel">
+    <div className="panel cs-panel">
       <div className="cs-head">
         <div>
           <h2>💰 Collection Follow-up Score</h2>

@@ -577,6 +577,8 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .commit-form input { padding: 6px 8px; font-size: 12.5px; }
 .uc-tbl select { padding: 4px 6px; font-size: 12px; max-width: 190px; }
 /* Collection follow-up score (Scoreboard) */
+.cs-panel { grid-column: 1 / -1; }
+.cs-tbl td:first-child { white-space: nowrap; }
 .cs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
 .cs-head select { margin-left: 6px; padding: 5px 8px; }
 .cs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 6px 0 14px; }
