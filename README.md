@@ -50,6 +50,12 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - **Permanent note** (`fms_collection.permanent_note`) = party excluded from worklist ("Excluded" chip).
 - **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
   `fms_coll_cols`) + Print (current filter).
+- **Imported history** (`mode = 'sheet'`): the old Google-Form sheet (Payment_FollowUp_Res, 27 Jun –
+  22 Sep 2026, 2,115 rows / 265 parties) was loaded into `fms_followups` on 22 Sep 2026 — remark, bill
+  no, stage (Payment received / No response / Close / CRM Support), amount + mode, next date (plan) and
+  the original timestamp + salesman as `created_by`. It shows in party History, Pulse and Scoreboard
+  like any call entry; `fms_collection.next_followup_date` was back-filled from each party's latest
+  open sheet entry (159 parties). Parties that no longer have pending bills keep their history only.
 
 ## My Parties tab (salesman)
 - Shows only the logged-in salesman's parties (+ those transferred to them). Login -> ERP salesman
