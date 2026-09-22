@@ -32,6 +32,21 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
   Jo blank hai wo grid me dotted box hai — wahin type karo, `contact_manual` (JSONB) me save hota hai
   aur agla sync usse kabhi overwrite nahi karta. Filter: "📇 Contact info missing".
 
+## Collection tab — follow-up system (Supabase)
+- Party list `fms_collection` (hourly ERP sync) + follow-up log `fms_followups` (party-level rows).
+- **Follow-up entry** (party modal): Stage (Committed / Payment received / PDC received / Dispute /
+  No response / CRM Support / Transfer / Close), remark, amount received + payment mode, bills ticked
+  in the table (`bill_nos`), promised amount + date (`committed_*`), transfer to salesman + reason
+  (`transfer_*`), next follow-up date -> `fms_collection.next_followup_date` (Close = null).
+- **Status buckets** from next date: Missed / Today / Tomorrow / This week / Later / No date / Closed.
+  Rules: call logged today or last stage "CRM Support" -> not Missed; last stage "Close" -> Closed.
+- **Broken promise** = committed date passed, nothing received after it, not closed -> top priority.
+- **Claimed paid**: bills ticked on a "received" entry are hidden (strikethrough toggle) until the
+  next ERP sync drops them.
+- **Permanent note** (`fms_collection.permanent_note`) = party excluded from worklist ("Excluded" chip).
+- **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
+  `fms_coll_cols`) + Print (current filter).
+
 ## How it works
 - **Sync ERP** button pulls MobileSO.ashx via the proxy, aggregates line-rows per Mobile SO,
   and upserts into `fms_orders` (custom column values & payment status are preserved).

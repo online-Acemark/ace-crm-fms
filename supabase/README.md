@@ -58,3 +58,12 @@ hisaab BillAmt - StillPending se hota hai.
 select jobname, schedule, active from cron.job;
 -- band karna ho: select cron.unschedule('fms-daily-digest');
 ```
+
+## Collection follow-ups (migration `collection_followup_stage_commit_transfer`)
+
+`fms_followups` extra columns: `stage, payment_mode, bill_nos (jsonb array), committed_amount,
+committed_date, transfer_to, transfer_reason`. `fms_collection` extra: `permanent_note,
+note_updated_by, note_updated_at`. `fms-collection-sync` ka upsert sirf apne columns bhejta hai,
+isliye `next_followup_date` / `permanent_note` sync me preserve rehte hain (fully-paid party delete
+hone par note bhi jaata hai). Sab derived values (follow-up count, last stage, broken promise,
+claimed-paid bills) app me `fms_followups` se compute hote hain — koi trigger nahi.

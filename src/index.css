@@ -486,6 +486,74 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .coll-old td { background: color-mix(in srgb, var(--red) 7%, transparent); }
 .coll-notes { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---- follow-up system: stage chips, status pills, timeline, pulse, columns ---- */
+.stage-chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); white-space: nowrap; color: var(--txt); background: var(--panel); }
+.stage-chip.st-commit { background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue); border-color: color-mix(in srgb, var(--blue) 50%, transparent); }
+.stage-chip.st-recv { background: color-mix(in srgb, var(--green) 14%, transparent); color: var(--green); border-color: color-mix(in srgb, var(--green) 50%, transparent); }
+.stage-chip.st-bad { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
+.stage-chip.st-park { background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
+.stage-chip.st-close { color: var(--muted); border-style: dashed; }
+.stage-chip .muted { font-weight: 400; }
+.bk-pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); white-space: nowrap; color: var(--muted); }
+.bk-pill.bk-missed { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.bk-pill.bk-today { color: var(--amber); border-color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.bk-pill.bk-tom { color: var(--blue); border-color: color-mix(in srgb, var(--blue) 60%, transparent); }
+.bk-pill.bk-week { color: var(--txt); }
+.bk-pill.bk-closed { border-style: dashed; }
+.flw-pill { display: inline-block; font-weight: 800; font-size: 11.5px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); }
+.flw-pill.hi { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+.xfer-tag { margin-left: 6px; font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 10px; background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); }
+.coll-remark { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coll-flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.fld-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.fld-row > * { flex: 1; min-width: 120px; }
+.fld-row > button { flex: none; }
+.stage-hint { line-height: 1.3; }
+.coll-steps select { padding: 5px 8px; font-size: 12.5px; width: 100%; }
+.bill-tag { display: inline-block; margin: 2px 4px 0 0; padding: 1px 7px; border-radius: 8px; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue); cursor: pointer; }
+.chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+.chk input { width: 14px; height: 14px; }
+.fup-log { max-height: 300px; }
+.fup-log-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fup-log-head h4 { margin: 0; }
+.note-box { display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-bottom: 8px; border: 1px dashed var(--red); border-radius: 8px; background: color-mix(in srgb, var(--red) 5%, transparent); }
+.note-box textarea { font-family: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--input-bg); color: var(--txt); resize: vertical; }
+/* timeline */
+.tl { display: flex; flex-direction: column; }
+.tl-item { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+.tl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-top: 5px; }
+.tl-body { flex: 1; min-width: 0; font-size: 11.5px; }
+.tl-top { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.tl-says { margin-top: 2px; }
+.tl-bills { margin-top: 2px; font-size: 10.5px; color: var(--muted); }
+/* bills table states */
+.coll-hot td { background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.coll-paid td { opacity: .55; text-decoration: line-through; }
+.coll-paid td .green-t { text-decoration: none; }
+.coll-sel td { background: color-mix(in srgb, var(--blue) 10%, transparent) !important; }
+.coll-bill-tbl tbody tr { cursor: pointer; }
+.hot-lgd { margin-left: 10px; font-size: 11px; font-weight: 600; color: var(--amber); }
+/* pulse card */
+.coll-pulse { margin-top: 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+.pulse-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pulse-range { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pulse-range input { padding: 4px 6px; font-size: 12px; }
+.pulse-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.pulse-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; padding: 7px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); min-width: 150px; font: inherit; color: inherit; text-align: left; }
+.pulse-stat b { font-size: 16px; }
+.pulse-stat span { font-size: 11px; color: var(--muted); }
+.pulse-stat.green b { color: var(--green); }
+button.pulse-stat { cursor: pointer; }
+button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
+.pulse-stat.active { background: color-mix(in srgb, var(--blue) 10%, var(--panel)); }
+.pulse-stat.wide { flex: 1; }
+.pulse-users { display: flex; gap: 5px; flex-wrap: wrap; }
+.user-tag { font-size: 11px; padding: 1px 7px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); }
+.preset-lbl { font-size: 11.5px; color: var(--muted); align-self: center; margin-right: 2px; }
+.coll-tools { margin-left: auto; display: flex; gap: 6px; }
+.coll-colpanel { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.print-only { display: none; }
+
 /* ===================================================== */
 /* =============== MOBILE RESPONSIVE ================== */
 /* ===================================================== */
@@ -563,8 +631,12 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 /* ==================== PRINT ========================== */
 /* Today Work / Pending Order ke 🖨 Print se sirf khuli table print hoti hai */
 @media print {
-  .topbar, .toast, .action-filter, .act-sec-tabs, .coll-filters, .coll-kpis,
-  .sec-title .how, .legend, .demo-note { display: none !important; }
+  .topbar, .toast, .action-filter, .act-sec-tabs, .coll-filters, .coll-kpis, .coll-pulse, .coll-colpanel, .coll-help,
+  .no-print, .sec-title .how, .legend, .demo-note { display: none !important; }
+  .print-only { display: block !important; margin: 0 0 6px; }
+  .coll-tbl { min-width: 0 !important; width: 100%; font-size: 10.5px; }
+  .coll-tbl td, .coll-tbl th { padding: 3px 5px; }
+  .aging-chips { max-width: none; }
   .app { height: auto; }
   main { overflow: visible; padding: 0; }
   .panel { border: none; box-shadow: none; padding: 0; }
