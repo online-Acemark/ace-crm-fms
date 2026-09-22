@@ -576,6 +576,16 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .commit-form { margin-top: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--blue) 45%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--blue) 6%, var(--panel)); display: flex; flex-direction: column; gap: 6px; }
 .commit-form input { padding: 6px 8px; font-size: 12.5px; }
 .uc-tbl select { padding: 4px 6px; font-size: 12px; max-width: 190px; }
+/* Collection follow-up score (Scoreboard) */
+.cs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.cs-head select { margin-left: 6px; padding: 5px 8px; }
+.cs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 6px 0 14px; }
+.cs-sub { font-size: 13px; margin: 8px 0 6px; }
+.cs-tbl { font-size: 12.5px; width: 100%; }
+.cs-tbl th { text-align: left; }
+.cs-cur td { background: color-mix(in srgb, var(--blue) 10%, transparent); }
+.kpi.amber b { color: var(--amber); }
+@media (max-width: 900px) { .cs-grid { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .sm-panel { grid-template-columns: 1fr; } }
 
 /* ===================================================== */

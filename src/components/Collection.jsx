@@ -66,6 +66,7 @@ function FollowupForm({ p, bills, salesmen, demo, onClose, onSaved }) {
       transfer_to: stage === 'Transfer' ? tTo.trim() : null,
       transfer_reason: stage === 'Transfer' ? tReason.trim() || null : null,
       followup_date: isoDay(),
+      next_followup_date: stage === 'Close' ? null : new Date(nextDate).toISOString(),   // PLAN (scoring)
       created_by: user?.email || '',
     })
     const { error: e2 } = await supabase.from('fms_collection')

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { computePipeline, computeScore, fmtDelay, isPaid } from '../lib/fms'
+import CollectionScore from './CollectionScore'
 
 export default function Scoreboard({ orders, stages, scoring }) {
   const [hist, setHist] = useState([]) // fms_score_daily: pichhle 30 din ke snapshots (trend ke liye)
@@ -112,6 +113,7 @@ export default function Scoreboard({ orders, stages, scoring }) {
           </tbody>
         </table>
       </div>
+      <CollectionScore />
     </div>
   )
 }

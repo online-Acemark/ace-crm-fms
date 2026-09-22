@@ -55,6 +55,7 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
       committed_amount: Number(amount), committed_date: date,
       bill_nos: selBills.map((b) => b.vno),
       followup_date: isoDay(), created_by: user?.email || '',
+      next_followup_date: new Date(date + 'T11:00:00').toISOString(),   // PLAN = wade ka din (scoring)
     })
     if (error) { setSaving(false); setErr('Save failed: ' + error.message); return }
     // CRM ka next follow-up: agar blank hai ya commitment date ke BAAD hai to commitment ke din 11 AM par le aao

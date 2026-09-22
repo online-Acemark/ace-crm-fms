@@ -60,6 +60,15 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
   pulled to the promised day if it was blank or later.
 - Shared helpers live in `src/lib/coll.js`, shared UI bits in `src/components/CollBits.jsx`.
 
+## Collection follow-up scoring (Scoreboard tab)
+- Every follow-up entry stores its plan (`fms_followups.next_followup_date`). The next non-WhatsApp
+  entry on the same party is the actual. Same day or earlier = on time (100), each day late −20
+  (settings key `coll_scoring`: on_time_points / penalty_per_day / min_points), plan date passed with
+  no call = missed (0), stage Close = no plan. Week = Monday–Saturday, scored in the week of the plan.
+- Credit goes to whoever logged the actual follow-up; a missed plan counts against its planner.
+- Scoreboard shows week picker, KPIs, by-user table, 8-week trend and the plan list.
+  Logic: `scoreFollowups()` / `summarize()` in `src/lib/coll.js`.
+
 ## How it works
 - **Sync ERP** button pulls MobileSO.ashx via the proxy, aggregates line-rows per Mobile SO,
   and upserts into `fms_orders` (custom column values & payment status are preserved).

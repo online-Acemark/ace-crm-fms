@@ -121,6 +121,66 @@ export async function fetchAll(table, cols, apply) {
   }
   return out
 }
-export const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at'
+export const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at,next_followup_date'
 export const RCPT_COLS = 'company_id,pay_vno,party_name,pay_date,pay_type,amount,bills'
 
+
+// ---------- follow-up scoring (weekly, Mon–Sat) ----------
+// Har follow-up entry par PLAN save hota hai (next_followup_date). Usi party ki AGLI entry = ACTUAL.
+// actual <= plan (same day ya pehle) = on time (full points); late = plan ke baad, har din penalty;
+// plan beet gaya aur agli entry nahi = missed (0). Score us hafte me ginta hai jis hafte plan tha.
+export const SCORE_DEFAULTS = { on_time_points: 100, penalty_per_day: 20, min_points: 0 }
+// hafte ki key = us hafte ka Monday (yyyy-mm-dd). Sunday apne hi hafte (Mon–Sun) me.
+export function weekKey(v) { const d = startOfDay(v); const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow); return isoDay(d) }
+export function weekLabel(k) { const m = new Date(k + 'T00:00:00'); const s = new Date(m); s.setDate(m.getDate() + 5); return `${dmy(m)} – ${dmy(s)}` }
+export function scoreFollowups(fups, cfg = SCORE_DEFAULTS, today = isoDay()) {
+  const c = { ...SCORE_DEFAULTS, ...(cfg || {}) }
+  const byParty = new Map()
+  for (const f of fups) {
+    if (f.mode === 'whatsapp') continue
+    const k = normKey(f.party_name); if (!k) continue
+    if (!byParty.has(k)) byParty.set(k, [])
+    byParty.get(k).push(f)
+  }
+  const items = []
+  for (const [k, list] of byParty) {
+    list.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i]
+      if (!f.next_followup_date || f.stage === 'Close') continue
+      const plan = isoDay(new Date(f.next_followup_date))
+      const next = list[i + 1]
+      const actual = next ? isoDay(new Date(next.created_at)) : null
+      let status, days = 0, points = null
+      if (actual) {
+        days = Math.round((startOfDay(actual) - startOfDay(plan)) / 864e5)
+        if (days <= 0) { status = days < 0 ? 'early' : 'ontime'; points = c.on_time_points }
+        else { status = 'late'; points = Math.max(c.min_points, c.on_time_points - c.penalty_per_day * days) }
+      } else if (plan < today) {
+        status = 'missed'; days = Math.round((startOfDay(today) - startOfDay(plan)) / 864e5); points = c.min_points
+      } else { status = 'upcoming' }
+      items.push({
+        id: f.id, key: k, party: f.party_name, plan, actual, status, days, points, week: weekKey(plan),
+        planner: userName(f.created_by), doer: next ? userName(next.created_by) : '',
+        // credit: jisne follow-up kiya; missed ho to jisne plan banaya tha
+        who: next ? userName(next.created_by) : userName(f.created_by),
+        stage: next ? next.stage || '' : '',
+      })
+    }
+  }
+  return items
+}
+// items ka summary (ek group ke liye)
+export function summarize(items, cfg = SCORE_DEFAULTS) {
+  const c = { ...SCORE_DEFAULTS, ...(cfg || {}) }
+  const r = { planned: items.length, ontime: 0, early: 0, late: 0, missed: 0, upcoming: 0, lateDays: 0, points: 0, scored: 0 }
+  for (const it of items) {
+    r[it.status]++
+    if (it.status === 'late') r.lateDays += it.days
+    if (it.points != null) { r.points += it.points; r.scored++ }
+  }
+  r.done = r.ontime + r.early
+  r.avgLate = r.late ? Math.round((r.lateDays / r.late) * 10) / 10 : 0
+  r.score = r.scored ? Math.round((r.points / (r.scored * c.on_time_points)) * 100) : null
+  return r
+}
