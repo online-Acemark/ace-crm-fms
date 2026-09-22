@@ -553,6 +553,19 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .coll-tools { margin-left: auto; display: flex; gap: 6px; }
 .coll-colpanel { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
 .print-only { display: none; }
+/* party modal: action bar + bill-wise follow-up (chhota modal) + ERP receipts */
+.coll-actbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.coll-actbar .ask { flex: 1; min-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sel-bar { display: inline-flex; gap: 8px; align-items: center; padding: 4px 10px; border-radius: 10px; background: color-mix(in srgb, var(--blue) 12%, transparent); border: 1px solid color-mix(in srgb, var(--blue) 50%, transparent); font-size: 12px; margin-left: auto; }
+.bill-tag.static { cursor: default; }
+.fup-back { z-index: 60; }
+.fup-modal2 { width: min(980px, 96vw); }
+.fup2-grid { display: grid; grid-template-columns: 1.3fr 1.2fr 1fr; gap: 14px; }
+.fup2-grid select, .fup2-grid input { padding: 6px 8px; font-size: 12.5px; width: 100%; }
+.coll-rcpts { min-width: 0; }
+.rcpt-tbl { font-size: 12px; }
+.rcpt-tbl th { text-align: left; }
+.coll-fup { grid-template-columns: 1.4fr 1fr; }
 
 /* ===================================================== */
 /* =============== MOBILE RESPONSIVE ================== */

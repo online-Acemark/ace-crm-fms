@@ -133,6 +133,12 @@ Deno.serve(async () => {
             if (f.committed_date) a.committed = { amount: Number(f.committed_amount) || 0, date: String(f.committed_date) };
           }
         }
+        // kal ERP me kitna paisa aaya (fms_receipts = Payment.ashx voucher-wise)
+        let yErp = 0, yErpN = 0;
+        try {
+          const rc = await sb(`fms_receipts?select=amount&pay_date=eq.${yISO}`);
+          for (const r of rc || []) { yErp += Number(r.amount || 0); yErpN++; }
+        } catch (_e) { /* receipts table na ho to skip */ }
         const missed: any[] = [], dueToday: any[] = [], broken: any[] = [];
         for (const p of live) {
           const a = ag.get(norm(p.party_name)) || { lastStage: "", doneToday: false, committed: null, recvAfter: false };
@@ -146,7 +152,7 @@ Deno.serve(async () => {
         missed.sort((a, b) => Number(b.total_pending) - Number(a.total_pending));
         broken.sort((a, b) => b.c.amount - a.c.amount);
         const stuck = missed.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
-        collCounts = { missed: missed.length, dueToday: dueToday.length, broken: broken.length, yDone, yRecv };
+        collCounts = { missed: missed.length, dueToday: dueToday.length, broken: broken.length, yDone, yRecv, yErp, yErpN };
         const dm = (s: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); return m ? `${m[3]}/${m[2]}` : s; };
 
         L.push("");
@@ -155,7 +161,8 @@ Deno.serve(async () => {
         L.push(`- Aaj due: ${dueToday.length} parties`);
         L.push(`- Promise tuta (broken): ${broken.length}`);
         const users = Object.entries(yUsers).sort((a, b) => b[1] - a[1]).map(([u, n]) => `${u} ${n}`).join(", ");
-        L.push(`- Kal ka kaam: ${yDone} follow-up${users ? " (" + users + ")" : ""} | received ${inr(yRecv)}`);
+        L.push(`- Kal ka kaam: ${yDone} follow-up${users ? " (" + users + ")" : ""}`);
+        L.push(`- Kal received (ERP): ${inr(yErp)} | ${yErpN} voucher${yRecv > 0 ? " | notes me claimed " + inr(yRecv) : ""}`);
         if (broken.length) {
           L.push(`BROKEN PROMISE (${broken.length}):`);
           for (const p of broken.slice(0, 5)) L.push(`- ${p.party_name} | wada ${inr(p.c.amount)} tak ${dm(p.c.date)} | baaki ${inr(p.total_pending)} | ${p.salesman || ""}`);

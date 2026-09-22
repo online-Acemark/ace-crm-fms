@@ -41,8 +41,12 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - **Status buckets** from next date: Missed / Today / Tomorrow / This week / Later / No date / Closed.
   Rules: call logged today or last stage "CRM Support" -> not Missed; last stage "Close" -> Closed.
 - **Broken promise** = committed date passed, nothing received after it, not closed -> top priority.
-- **Claimed paid**: bills ticked on a "received" entry are hidden (strikethrough toggle) until the
-  next ERP sync drops them.
+- **Bill-wise entry**: 📝 on a bill row (or tick several bills → "Follow-up for these") opens the
+  form in a small modal with the bill(s) locked in; "Follow-up (whole account)" for no specific bill.
+- **ERP receipts** (`fms_receipts`, from Payment.ashx): party modal shows voucher-wise receipts
+  (date, voucher no, type, amount, bills adjusted); bills carry `pay_status/received/still_pending`.
+  Pulse "Received (ERP)" is the real number; amounts typed in notes are only "claimed" and show as
+  ⚠ until ERP confirms (Full → bill hidden as paid).
 - **Permanent note** (`fms_collection.permanent_note`) = party excluded from worklist ("Excluded" chip).
 - **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
   `fms_coll_cols`) + Print (current filter).

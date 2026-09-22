@@ -4,7 +4,8 @@ import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from 
 import MultiSelect from './MultiSelect'
 
 // Collection tab: poore ledger ka party-wise outstanding (fms_collection, har ghante ERP se sync)
-// + follow-up system (fms_followups): stage, bills, received/mode, commitment, transfer, permanent note.
+// + follow-up system (fms_followups): stage, bills, commitment, transfer, permanent note
+// + ERP receipts (fms_receipts, Payment.ashx voucher-wise) — paisa aaya ya nahi ERP batata hai, manual entry sirf "claim".
 // Design goal: naya CRM executive bina training ke chala le — sabse zaroori party UPAR,
 // har row par seedha Call/WhatsApp/Note, aur ek-click filter chips.
 const BUCKETS = [
@@ -41,7 +42,7 @@ const STAGE_CLS = {
 }
 const STAGE_HINT = {
   'Committed': 'Party promised to pay — enter the amount and the date they promised',
-  'Payment received': 'Money came in — enter amount and mode; ticked bills will be marked "claimed paid"',
+  'Payment received': 'Party says money is sent — enter amount + mode. ERP sync (hourly) confirms it against the bills',
   'PDC received': 'Post-dated cheque received — enter amount, mode = Cheque/PDC',
   'Dispute': 'Party disputes the bill (rate / damage / short supply) — write details',
   'No response': 'Phone not picked / switched off — set the next date',
@@ -65,36 +66,38 @@ function bucketOf(p, ag) {
   return d <= 6 - dow ? 'week' : 'later'
 }
 
-// Promise tuta? Committed date beet gayi, uske baad paisa nahi aaya, aur party close nahi hui.
+// Promise tuta? Committed date beet gayi, uske baad paisa nahi aaya (ERP receipt ya logged), aur party close nahi hui.
 function isBroken(ag) {
   const c = ag.committed
   if (!c || ag.lastStage === 'Close') return false
   if (dayDiff(c.date) >= 0) return false
-  return !ag.entries.some((f) => Number(f.amount_received) > 0 && new Date(f.created_at) > new Date(c.at))
+  const cAt = new Date(c.at)
+  if (ag.entries.some((f) => Number(f.amount_received) > 0 && new Date(f.created_at) > cAt)) return false
+  const cDay = String(c.at).slice(0, 10)
+  return !ag.receipts.some((r) => r.pay_date && r.pay_date >= cDay)
 }
 
-const EMPTY_AGG = { entries: [], waCount: 0, count: 0, last: null, lastStage: '', doneToday: false, committed: null, transferTo: '', transferReason: '', paid: new Map(), recvTotal: 0 }
-// fms_followups (party-level) -> per party summary. Entries created_at DESC aate hain.
-function buildAgg(fups) {
+const EMPTY_AGG = { entries: [], waCount: 0, count: 0, last: null, lastStage: '', doneToday: false, committed: null, transferTo: '', transferReason: '', paid: new Map(), recvTotal: 0, receipts: [] }
+// fms_followups (party-level) + fms_receipts -> per party summary. Entries created_at DESC aate hain.
+function buildAgg(fups, receipts) {
   const m = new Map()
   const today = isoDay()
+  const get = (k) => { let a = m.get(k); if (!a) { a = { ...EMPTY_AGG, entries: [], paid: new Map(), receipts: [] }; m.set(k, a) } return a }
   for (const f of fups) {
     const k = normKey(f.party_name); if (!k) continue
-    let a = m.get(k)
-    if (!a) { a = { ...EMPTY_AGG, entries: [], paid: new Map() }; m.set(k, a) }
-    const isWa = f.mode === 'whatsapp'
-    if (isWa) { a.waCount++ } else {
-      a.entries.push(f); a.count++
-      if (!a.last) { a.last = f; a.lastStage = f.stage || '' }
-      if (String(f.created_at || '').slice(0, 10) === today) a.doneToday = true
-      if (!a.committed && f.committed_date) a.committed = { amount: Number(f.committed_amount) || 0, date: f.committed_date, at: f.created_at, by: f.created_by }
-      if (!a.transferTo && f.transfer_to) { a.transferTo = f.transfer_to; a.transferReason = f.transfer_reason || '' }
-      if (Number(f.amount_received) > 0) {
-        a.recvTotal += Number(f.amount_received)
-        for (const v of (Array.isArray(f.bill_nos) ? f.bill_nos : [])) if (v && !a.paid.has(v)) a.paid.set(v, { at: f.created_at, amount: Number(f.amount_received) })
-      }
+    const a = get(k)
+    if (f.mode === 'whatsapp') { a.waCount++; continue }
+    a.entries.push(f); a.count++
+    if (!a.last) { a.last = f; a.lastStage = f.stage || '' }
+    if (String(f.created_at || '').slice(0, 10) === today) a.doneToday = true
+    if (!a.committed && f.committed_date) a.committed = { amount: Number(f.committed_amount) || 0, date: f.committed_date, at: f.created_at, by: f.created_by }
+    if (!a.transferTo && f.transfer_to) { a.transferTo = f.transfer_to; a.transferReason = f.transfer_reason || '' }
+    if (Number(f.amount_received) > 0) {
+      a.recvTotal += Number(f.amount_received)
+      for (const v of (Array.isArray(f.bill_nos) ? f.bill_nos : [])) if (v && !a.paid.has(v)) a.paid.set(v, { at: f.created_at, amount: Number(f.amount_received) })
     }
   }
+  for (const r of receipts) { const k = normKey(r.party_name); if (k) get(k).receipts.push(r) }   // pay_date DESC
   return m
 }
 
@@ -178,8 +181,35 @@ function Timeline({ entries, waCount }) {
   )
 }
 
-// ---------- Party modal: bills detail + guided follow-up form + timeline + permanent note ----------
-function PartyDetail({ p, ag, demo, salesmen, onSaved }) {
+// ---------- ERP receipts (Payment.ashx) — kab, kaunse voucher se, kitna, kin bills par ----------
+function Receipts({ list }) {
+  const [all, setAll] = useState(false)
+  if (!list.length) return <p className="muted small">No receipt found in ERP for this party (Payment.ashx covers bills from Jan 2026).</p>
+  const shown = all ? list : list.slice(0, 8)
+  return (
+    <div className="tbl-wrap-inner">
+      <table className="cfg-tbl rcpt-tbl">
+        <thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Amount</th><th>Adjusted against</th></tr></thead>
+        <tbody>
+          {shown.map((r) => (
+            <tr key={r.company_id + '|' + r.pay_vno}>
+              <td>{dmy(r.pay_date)}</td>
+              <td className="small"><b>{r.pay_vno}</b></td>
+              <td className="small">{r.pay_type || '—'}</td>
+              <td><b className="green-t">{inr(r.amount)}</b></td>
+              <td className="small">{(r.bills || []).map((b, i) => <span key={i} className="bill-tag static" title={inr(b.amt)}>{b.vno}</span>)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {list.length > 8 && <button className="link small" onClick={() => setAll((v) => !v)}>{all ? 'Show less' : `Show all ${list.length} receipts`}</button>}
+    </div>
+  )
+}
+
+// ---------- Follow-up form (chhota modal): bill-wise ya party-level ----------
+// bills = [{ vno, pending }] jin par ye note hai (khali = poora account)
+function FollowupForm({ p, bills, salesmen, demo, onClose, onSaved }) {
   const [stage, setStage] = useState('')
   const [remark, setRemark] = useState('')
   const [amount, setAmount] = useState('')
@@ -188,36 +218,35 @@ function PartyDetail({ p, ag, demo, salesmen, onSaved }) {
   const [cDate, setCDate] = useState('')
   const [tTo, setTTo] = useState('')
   const [tReason, setTReason] = useState('')
-  const [selBills, setSelBills] = useState([])
   const [nextDate, setNextDate] = useState(() => toLocalInput(suggestNextFollowup()))
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
-  const [okMsg, setOkMsg] = useState('')
-  // permanent note editor
-  const [noteOpen, setNoteOpen] = useState(false)
-  const [note, setNote] = useState(p.permanent_note || '')
+  const billSum = bills.reduce((a, b) => a + Number(b.pending || 0), 0)
+  const scope = bills.length === 0 ? 'whole account' : bills.length === 1 ? `bill ${bills[0].vno} · ${inr(bills[0].pending)} pending` : `${bills.length} bills · ${inr(billSum)} pending`
 
-  // Committed date default = next follow-up date (promise ke din hi call hogi)
-  const pickStage = (s) => { setStage(s); if (s === 'Committed' && !cDate && nextDate) setCDate(nextDate.slice(0, 10)) }
-
-  const toggleBill = (v) => setSelBills((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]))
+  // Committed: date default = next follow-up date; amount default = in bills ka pending
+  const pickStage = (s) => {
+    setStage(s)
+    if (s === 'Committed') { if (!cDate && nextDate) setCDate(nextDate.slice(0, 10)); if (!cAmt && billSum) setCAmt(String(Math.round(billSum))) }
+    if (s === 'Payment received' && !amount && billSum) setAmount(String(Math.round(billSum)))
+  }
 
   const save = async () => {
-    if (!stage) { setErr('Pick a Stage first (Step 2) — what happened on this call?'); return }
-    if (!remark.trim()) { setErr('Write what was discussed (Step 2)'); return }
+    if (!stage) { setErr('Pick a Stage first — what happened on this call?'); return }
+    if (!remark.trim()) { setErr('Write what was discussed'); return }
     if (stage === 'Committed' && !(Number(cAmt) > 0 && cDate)) { setErr('Committed stage needs the promised amount and date'); return }
-    if (stage === 'Payment received' && !(Number(amount) > 0)) { setErr('Payment received — enter the amount received'); return }
+    if (stage === 'Payment received' && !(Number(amount) > 0)) { setErr('Payment received — enter the amount'); return }
     if (Number(amount) > 0 && !payMode) { setErr('Pick the payment mode for the amount received'); return }
     if (stage === 'Transfer' && !tTo.trim()) { setErr('Transfer — pick the salesman to hand over to'); return }
-    if (stage !== 'Close' && !nextDate) { setErr('Set the next follow-up date (Step 3)'); return }
+    if (stage !== 'Close' && !nextDate) { setErr('Set the next follow-up date'); return }
     if (demo) { setErr('Demo mode cannot save — use the real login'); return }
-    setSaving(true); setErr(''); setOkMsg('')
+    setSaving(true); setErr('')
     const { data: { user } } = await supabase.auth.getUser()
     const { error: e1 } = await supabase.from('fms_followups').insert({
       party_name: p.party_name, remarks: remark.trim(), mode: 'call', stage,
       amount_received: Number(amount) > 0 ? Number(amount) : null,
       payment_mode: Number(amount) > 0 ? payMode : null,
-      bill_nos: selBills,
+      bill_nos: bills.map((b) => b.vno),
       committed_amount: stage === 'Committed' ? Number(cAmt) : null,
       committed_date: stage === 'Committed' ? cDate : null,
       transfer_to: stage === 'Transfer' ? tTo.trim() : null,
@@ -229,13 +258,80 @@ function PartyDetail({ p, ag, demo, salesmen, onSaved }) {
       .update({ next_followup_date: stage === 'Close' ? null : new Date(nextDate).toISOString() }).eq('party_name', p.party_name)
     setSaving(false)
     if (e1 || e2) { setErr('Save failed: ' + (e1 || e2).message); return }
-    setRemark(''); setAmount(''); setPayMode(''); setCAmt(''); setCDate(''); setTTo(''); setTReason(''); setSelBills([]); setStage('')
-    setOkMsg(stage === 'Close' ? '✅ Saved — party closed, it will leave the Today/Tomorrow lists.'
+    onSaved?.(stage === 'Close' ? '✅ Saved — party closed, it leaves the Today/Tomorrow lists.'
       : stage === 'Transfer' ? `✅ Saved — this party now shows under ${tTo.trim()} as well.`
-      : '✅ Saved! On that date this party will automatically appear under "Today".')
-    setTimeout(() => setOkMsg(''), 6000)
-    onSaved?.()
+      : stage === 'Payment received' ? '✅ Saved as claimed — the hourly ERP sync will confirm it against the bills.'
+      : '✅ Saved! On that date this party will appear under "Today".')
+    onClose()
   }
+
+  return (
+    <div className="modal-back fup-back" onClick={onClose}>
+      <div className="modal fup-modal2" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h3>📝 Follow-up — {p.party_name}</h3>
+            <p className="muted small" style={{ margin: '2px 0 0' }}>For: <b>{scope}</b>{bills.length > 1 && <> · {bills.map((b) => b.vno).join(', ')}</>}</p>
+          </div>
+          <button className="btn ghost" onClick={onClose}>✕</button>
+        </div>
+        <div className="fup2-grid">
+          <div className="step-form">
+            <b>What happened?</b>
+            <select value={stage} onChange={(e) => pickStage(e.target.value)} autoFocus>
+              <option value="">Stage — pick one…</option>
+              {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+            {stage && <span className="muted small stage-hint">{STAGE_HINT[stage]}</span>}
+            <input placeholder='What did they say? e.g. "Will pay by RTGS on the 5th"' value={remark} onChange={(e) => setRemark(e.target.value)} />
+          </div>
+          <div className="step-form">
+            <b>Details</b>
+            {stage === 'Committed' && <div className="fld-row">
+              <input type="number" placeholder="Promised amount ₹" value={cAmt} onChange={(e) => setCAmt(e.target.value)} />
+              <input type="date" value={cDate} title="Promised date" onChange={(e) => setCDate(e.target.value)} />
+            </div>}
+            {stage === 'Transfer' && <div className="fld-row">
+              <input list="coll-salesmen" placeholder="Transfer to (salesman)" value={tTo} onChange={(e) => setTTo(e.target.value)} />
+              <datalist id="coll-salesmen">{salesmen.map((s) => <option key={s} value={s} />)}</datalist>
+              <input placeholder="Reason" value={tReason} onChange={(e) => setTReason(e.target.value)} />
+            </div>}
+            <div className="fld-row">
+              <input type="number" placeholder="Amount received now (blank if none)" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              {Number(amount) > 0 && <select value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+                <option value="">Mode…</option>{PAY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>}
+            </div>
+            <span className="muted small">Amount is a claim — ERP receipt confirms it and splits it across bills automatically.</span>
+          </div>
+          <div className="step-form">
+            <b>When to remind next?</b>
+            <input type="datetime-local" value={nextDate} disabled={stage === 'Close'} onChange={(e) => setNextDate(e.target.value)} />
+            {stage === 'Close' && <span className="muted small">Close = no next date; party leaves the worklist.</span>}
+            <button className="btn primary" onClick={save} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save'}</button>
+            {err && <span className="err small" style={{ marginTop: 0 }}>{err}</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- Party modal body: actions, bills (bill-wise 📝), ERP receipts, history + permanent note ----------
+function PartyDetail({ p, ag, demo, salesmen, onSaved }) {
+  const [selBills, setSelBills] = useState([])
+  const [form, setForm] = useState(null)      // null | { bills: [{vno, pending}] }
+  const [okMsg, setOkMsg] = useState('')
+  const [err, setErr] = useState('')
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [note, setNote] = useState(p.permanent_note || '')
+
+  const wa = waLink(p.mobile, buildCollectionMsg(p))
+  const overdueBills = (p.bills || []).filter((b) => (b.od || 0) > 0)
+  const toggleBill = (v) => setSelBills((s) => (s.includes(v) ? s.filter((x) => x !== v) : [...s, v]))
+  const billObj = (vno) => { const b = overdueBills.find((x) => x.vno === vno); return { vno, pending: b ? (b.pending ?? b.amt) : 0 } }
+  const openForm = (vnos) => setForm({ bills: vnos.map(billObj) })
+  const saved = (msg) => { setOkMsg(msg); setSelBills([]); setTimeout(() => setOkMsg(''), 6000); onSaved?.() }
 
   const saveNote = async (clear) => {
     if (demo) { setErr('Demo mode cannot save — use the real login'); return }
@@ -248,10 +344,7 @@ function PartyDetail({ p, ag, demo, salesmen, onSaved }) {
     setNoteOpen(false); onSaved?.()
   }
 
-  const wa = waLink(p.mobile, buildCollectionMsg(p))
-  const overdueBills = (p.bills || []).filter((b) => (b.od || 0) > 0)
-
-  // bills table ke filters: firm-wise + aging-wise (multi-select) + PDC + claimed-paid toggle
+  // bills table ke filters: firm-wise + aging-wise (multi-select) + PDC + paid toggle
   const [fFirms, setFFirms] = useState([])
   const [fAges, setFAges] = useState([])
   const [fPdc, setFPdc] = useState('')
@@ -261,156 +354,134 @@ function PartyDetail({ p, ag, demo, salesmen, onSaved }) {
   const firmOpts = [...new Set(overdueBills.map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
   const today = isoDay()
   const hasPdc = (b) => !!(b.pdc_rcpt || b.pdc_date)
-  const claimedN = overdueBills.filter((b) => ag.paid.has(b.vno)).length
+  // paid state: 'erp' = ERP Full (ERP list se agle sync me hatega) | 'claimed' = note me received likha, ERP me abhi nahi
+  const paidState = (b) => b.pay_status === 'Full' ? 'erp' : ag.paid.has(b.vno) ? 'claimed' : ''
+  const paidN = overdueBills.filter((b) => paidState(b)).length
   const shownBills = overdueBills.filter((b) =>
-    (showPaid || !ag.paid.has(b.vno)) &&
+    (showPaid || !paidState(b)) &&
     (!fFirms.length || fFirms.includes(String(b.company || '').trim())) &&
     (!fAges.length || fAges.includes(ageBucket(b.od || 0))) &&
     (!fPdc || (fPdc === 'none' ? !hasPdc(b) : hasPdc(b) && b.pdc_date && (fPdc === 'today' ? b.pdc_date === today : fPdc === 'up' ? b.pdc_date > today : b.pdc_date < today))))
   const hotN = shownBills.filter((b) => (b.od || 0) >= 60).length
   const filtersOn = fFirms.length > 0 || fAges.length > 0 || fPdc
+  const selSum = selBills.reduce((a, v) => a + Number(billObj(v).pending || 0), 0)
+
+  const erpCell = (b) => {
+    const claimed = ag.paid.get(b.vno)
+    if (b.pay_status === 'Full') return <span className="green-t small">✅ Full{b.last_pay_date ? ' · ' + dmy(b.last_pay_date) : ''}</span>
+    if (b.pay_status === 'Part') return <span className="small"><b className="green-t">Part {inr(b.received)}</b>{claimed ? <div className="amber-t">claimed {inr(claimed.amount)} {dmy(claimed.at)}</div> : b.last_pay_date ? <div className="muted">{dmy(b.last_pay_date)}</div> : null}</span>
+    if (claimed) return <span className="amber-t small" title="Logged as received in a note; ERP has not shown a receipt yet — check after the next hourly sync">⚠ claimed {dmy(claimed.at)}<div>not in ERP yet</div></span>
+    return <span className="muted small">—</span>
+  }
 
   return (
     <div className="coll-detail">
-      {(ag.committed || ag.transferTo || p.permanent_note) && (
+      <div className="coll-actbar">
+        {p.mobile && <a className="btn primary sm" href={`tel:${p.mobile}`}>📞 Call {p.mobile}</a>}
+        {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer"
+          onClick={() => { logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder'); setTimeout(() => onSaved?.(), 800) }}>📤 Send WhatsApp</a>}
+        {!p.mobile && <span className="muted small">No mobile number — ask salesman {p.salesman || ''}</span>}
+        <button className="btn ghost sm" onClick={() => openForm([])} title="Note about the whole account (no specific bill)">📝 Follow-up (whole account)</button>
+        <button className="btn ghost sm" title="Permanent note: e.g. legal case, party closed — removes party from the worklist" onClick={() => setNoteOpen((v) => !v)}>
+          {p.permanent_note ? '🚫 Edit note' : '🚫 Exclude / note'}
+        </button>
+        <span className="muted small ask" title={`Ask: "Total ${inrShort(p.total_pending)} is pending${p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"`}>Ask: "Total {inrShort(p.total_pending)} is pending{p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"</span>
+      </div>
+      {(ag.committed || ag.transferTo || p.permanent_note || okMsg || err) && (
         <div className="coll-flags">
           {ag.committed && <span className={`stage-chip ${isBroken(ag) ? 'st-bad' : 'st-commit'}`}>{isBroken(ag) ? '💔 Broken promise: ' : '🤝 Promised: '}{inr(ag.committed.amount)} by {dmy(ag.committed.date)} <span className="muted">({userName(ag.committed.by)})</span></span>}
           {ag.transferTo && <span className="stage-chip st-park">↪ Transferred to {ag.transferTo}{ag.transferReason ? ' — ' + ag.transferReason : ''}</span>}
           {p.permanent_note && <span className="stage-chip st-bad">🚫 Excluded: {p.permanent_note}</span>}
+          {okMsg && <span className="green-t small"><b>{okMsg}</b></span>}
+          {err && <span className="err small" style={{ margin: 0 }}>{err}</span>}
         </div>
       )}
-      <div className="coll-fup">
-        <div className="coll-steps">
-          <h4>What to do with this party:</h4>
-          <div className="coll-step-btns">
-            <div className="coll-step">
-              <span className="step-num">1</span>
-              <div>
-                <b>Talk to them</b>
-                <div className="step-actions">
-                  {p.mobile && <a className="btn primary sm" href={`tel:${p.mobile}`}>📞 Call {p.mobile}</a>}
-                  {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer"
-                    onClick={() => { logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder'); setTimeout(() => onSaved?.(), 800) }}>📤 Send WhatsApp</a>}
-                  {!p.mobile && <span className="muted small">No mobile number — ask salesman {p.salesman || ''}</span>}
-                </div>
-                <p className="muted small" title={`Ask: "Total ${inrShort(p.total_pending)} is pending${p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"`}>Ask: "Total {inrShort(p.total_pending)} is pending{p.oldest_od ? `, oldest bill ${p.oldest_od} days overdue` : ''} — when can we expect the payment?"</p>
-              </div>
-            </div>
-            <div className="coll-step">
-              <span className="step-num">2</span>
-              <div className="step-form">
-                <b>What happened?</b>
-                <select value={stage} onChange={(e) => pickStage(e.target.value)} title={STAGE_HINT[stage] || 'Pick the outcome of this call'}>
-                  <option value="">Stage — pick one…</option>
-                  {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                {stage && <span className="muted small stage-hint">{STAGE_HINT[stage]}</span>}
-                <input placeholder='What did they say? e.g. "Will pay by RTGS on the 5th"' value={remark} onChange={(e) => setRemark(e.target.value)} />
-                {stage === 'Committed' && <div className="fld-row">
-                  <input type="number" placeholder="Promised amount ₹" value={cAmt} onChange={(e) => setCAmt(e.target.value)} />
-                  <input type="date" value={cDate} title="Promised date" onChange={(e) => setCDate(e.target.value)} />
-                </div>}
-                {stage === 'Transfer' && <div className="fld-row">
-                  <input list="coll-salesmen" placeholder="Transfer to (salesman)" value={tTo} onChange={(e) => setTTo(e.target.value)} />
-                  <datalist id="coll-salesmen">{salesmen.map((s) => <option key={s} value={s} />)}</datalist>
-                  <input placeholder="Reason" value={tReason} onChange={(e) => setTReason(e.target.value)} />
-                </div>}
-                <div className="fld-row">
-                  <input type="number" placeholder="Amount received now (blank if none)" value={amount} onChange={(e) => setAmount(e.target.value)} />
-                  {Number(amount) > 0 && <select value={payMode} onChange={(e) => setPayMode(e.target.value)}>
-                    <option value="">Mode…</option>{PAY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>}
-                </div>
-                {selBills.length > 0
-                  ? <span className="small">Bills: {selBills.map((v) => <span key={v} className="bill-tag" title="Click to remove" onClick={() => toggleBill(v)}>{v} ✕</span>)}</span>
-                  : <span className="muted small">Tip: tick bills in the table below to link this note to specific bills.</span>}
-              </div>
-            </div>
-            <div className="coll-step">
-              <span className="step-num">3</span>
-              <div className="step-form">
-                <b>When to remind next?</b>
-                <input type="datetime-local" value={nextDate} disabled={stage === 'Close'} onChange={(e) => setNextDate(e.target.value)} />
-                {stage === 'Close' && <span className="muted small">Close = no next date; party leaves the worklist.</span>}
-                <button className="btn primary" onClick={save} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save'}</button>
-              </div>
-            </div>
+      {noteOpen && (
+        <div className="note-box">
+          <textarea rows={2} placeholder="Why should this party stay out of the worklist? (legal case, disputed, account closed…)" value={note} onChange={(e) => setNote(e.target.value)} />
+          <div className="fld-row">
+            <button className="btn primary sm" onClick={() => saveNote(false)} disabled={!note.trim()}>Save note (exclude)</button>
+            {p.permanent_note && <button className="btn ghost sm" onClick={() => saveNote(true)}>Remove note (bring back)</button>}
+            <button className="btn ghost sm" onClick={() => setNoteOpen(false)}>Cancel</button>
           </div>
-          {err && <p className="err small">{err}</p>}
-          {okMsg && <p className="green-t small"><b>{okMsg}</b></p>}
+          {p.permanent_note && p.note_updated_by && <span className="muted small">Set by {userName(p.note_updated_by)} on {dmy(p.note_updated_at)}</span>}
         </div>
-        <div className="fup-log">
-          <div className="fup-log-head">
-            <h4>🗒️ Conversation history {ag.count ? `(${ag.count})` : ''}</h4>
-            <button className="btn ghost sm" title="Permanent note: e.g. legal case, party closed — removes party from the worklist" onClick={() => setNoteOpen((v) => !v)}>
-              {p.permanent_note ? '🚫 Edit note' : '🚫 Exclude / note'}
-            </button>
-          </div>
-          {noteOpen && (
-            <div className="note-box">
-              <textarea rows={2} placeholder="Why should this party stay out of the worklist? (legal case, disputed, account closed…)" value={note} onChange={(e) => setNote(e.target.value)} />
-              <div className="fld-row">
-                <button className="btn primary sm" onClick={() => saveNote(false)} disabled={!note.trim()}>Save note (exclude)</button>
-                {p.permanent_note && <button className="btn ghost sm" onClick={() => saveNote(true)}>Remove note (bring back)</button>}
-                <button className="btn ghost sm" onClick={() => setNoteOpen(false)}>Cancel</button>
-              </div>
-              {p.permanent_note && p.note_updated_by && <span className="muted small">Set by {userName(p.note_updated_by)} on {dmy(p.note_updated_at)}</span>}
-            </div>
-          )}
-          <Timeline entries={ag.entries} waCount={ag.waCount} />
-        </div>
-      </div>
+      )}
+
       <div className="coll-bills">
         {/* sirf DUE/OVERDUE bills dikhate hain — jo abhi credit period ke andar hain wo exclude */}
-        <h4>🧾 Overdue bills ({overdueBills.length} of {(p.bills || []).length} pending){hotN > 0 && <span className="hot-lgd">{hotN} bill{hotN > 1 ? 's' : ''} 60+ days overdue</span>}</h4>
+        <h4>🧾 Overdue bills ({overdueBills.length} of {(p.bills || []).length} pending){hotN > 0 && <span className="hot-lgd">{hotN} bill{hotN > 1 ? 's' : ''} 60+ days overdue</span>}
+          <span className="muted small" style={{ fontWeight: 400, marginLeft: 8 }}>— click 📝 on a bill to note a call about it, or tick several bills</span></h4>
         <div className="coll-bill-filters">
           <MultiSelect label="Firm" options={firmOpts} value={fFirms} onChange={setFFirms} />
           <MultiSelect label="Aging" options={AGE_OPTS.map((a) => ({ key: a, label: a + ' days' }))} value={fAges} onChange={setFAges} />
           <select value={fPdc} onChange={(e) => setFPdc(e.target.value)} title="Filter by post-dated cheque date">
             <option value="">PDC: All</option><option value="today">PDC today</option><option value="up">PDC upcoming</option><option value="due">PDC date passed</option><option value="none">No PDC</option>
           </select>
-          {claimedN > 0 && <label className="small chk"><input type="checkbox" checked={showPaid} onChange={(e) => setShowPaid(e.target.checked)} /> Show {claimedN} claimed-paid</label>}
+          {paidN > 0 && <label className="small chk"><input type="checkbox" checked={showPaid} onChange={(e) => setShowPaid(e.target.checked)} /> Show {paidN} paid / claimed</label>}
           {filtersOn && <>
             <button className="btn ghost sm" onClick={() => { setFFirms([]); setFAges([]); setFPdc('') }}>✕ Clear</button>
             <span className="filter-count active">🔎 {shownBills.length} / {overdueBills.length} bills</span>
           </>}
+          {selBills.length > 0 && (
+            <span className="sel-bar">
+              <b>{selBills.length} bill{selBills.length > 1 ? 's' : ''} selected · {inr(selSum)}</b>
+              <button className="btn primary sm" onClick={() => openForm(selBills)}>📝 Follow-up for these</button>
+              <button className="btn ghost sm" onClick={() => setSelBills([])}>✕</button>
+            </span>
+          )}
         </div>
         <div className="tbl-wrap-inner">
           <table className="cfg-tbl coll-bill-tbl">
-            <thead><tr><th title="Tick = this follow-up note is about this bill">✓</th><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th>Pending</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th></tr></thead>
+            <thead><tr><th title="Tick to select several bills for one note">✓</th><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th>Pending</th><th title="From ERP Payment.ashx: Full / Part received, or your claimed amount awaiting ERP">ERP paid</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th><th></th></tr></thead>
             <tbody>
               {shownBills.slice(0, 100).map((b, i) => {
-                const claimed = ag.paid.get(b.vno)
-                const cls = [claimed ? 'coll-paid' : '', b.od > 180 ? 'coll-old' : b.od >= 60 ? 'coll-hot' : '', selBills.includes(b.vno) ? 'coll-sel' : ''].join(' ')
+                const ps = paidState(b)
+                const cls = [ps ? 'coll-paid' : '', b.od > 180 ? 'coll-old' : b.od >= 60 ? 'coll-hot' : '', selBills.includes(b.vno) ? 'coll-sel' : ''].join(' ')
                 return (
-                  <tr key={i} className={cls} onClick={() => b.vno && toggleBill(b.vno)} title={claimed ? `Marked paid ${inr(claimed.amount)} on ${dmyt(claimed.at)} — will disappear once ERP sync confirms` : 'Click to link this bill to your note'}>
+                  <tr key={i} className={cls} onClick={() => b.vno && toggleBill(b.vno)}>
                     <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selBills.includes(b.vno)} disabled={!b.vno} onChange={() => toggleBill(b.vno)} /></td>
-                    <td><b>{b.vno || '—'}</b>{claimed && <div className="green-t small">✅ claimed paid {dmy(claimed.at)}</div>}</td>
+                    <td><b>{b.vno || '—'}</b></td>
                     <td className="small">{b.company || '—'}</td>
                     <td>{dmy(b.date)}</td>
                     {/* summary-shape bill (vno nahi) me sirf bill ki umar pata hoti hai — "not due yet" mat likho */}
                     <td>{b.od > 0 ? <span className={b.od > 90 ? 'red-t' : 'amber-t'}><b>{b.od} days overdue</b></span>
                       : <span className="muted small">{b.days != null ? (b.vno ? `${b.days} days (not due yet)` : `${b.days} days old`) : '—'}</span>}</td>
-                    <td><b>{inr(b.pending ?? b.amt)}</b></td>
+                    <td><b>{inr(b.pending ?? b.amt)}</b>{b.pay_status === 'Part' && b.still_pending != null && Math.round(b.still_pending) !== Math.round(b.pending ?? b.amt) && <div className="muted small">ERP: {inr(b.still_pending)}</div>}</td>
+                    <td onClick={(e) => e.stopPropagation()}>{erpCell(b)}</td>
                     <td className="small">{hasPdc(b) ? <span className={b.pdc_date && b.pdc_date < today ? 'red-t' : b.pdc_date === today ? 'amber-t' : ''}>✅ {b.pdc_rcpt || ''} {dmy(b.pdc_date)}</span> : '—'}</td>
                     <td className="small">{b.bilty || '—'}</td>
                     <td className="small coll-notes" title={b.notes || ''}>{b.notes || '—'}</td>
+                    <td onClick={(e) => e.stopPropagation()}>{b.vno && <button className="btn ghost sm" title={`Follow-up note for ${b.vno}`} onClick={() => openForm([b.vno])}>📝</button>}</td>
                   </tr>
                 )
               })}
               {!overdueBills.length && (
-                <tr><td colSpan={9} className="muted">No overdue bills — all pending bills are still within their credit period.</td></tr>
+                <tr><td colSpan={11} className="muted">No overdue bills — all pending bills are still within their credit period.</td></tr>
               )}
               {overdueBills.length > 0 && !shownBills.length && (
-                <tr><td colSpan={9} className="muted">{claimedN && !filtersOn ? 'All overdue bills are marked claimed-paid — tick "Show claimed-paid" to see them.' : 'No bills match this filter.'}</td></tr>
+                <tr><td colSpan={11} className="muted">{paidN && !filtersOn ? 'All overdue bills are paid / claimed — tick "Show paid / claimed" to see them.' : 'No bills match this filter.'}</td></tr>
               )}
               {shownBills.length > 100 && (
-                <tr><td colSpan={9} className="muted small">…and {shownBills.length - 100} more overdue bills (oldest 100 shown above)</td></tr>
+                <tr><td colSpan={11} className="muted small">…and {shownBills.length - 100} more overdue bills (oldest 100 shown above)</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      <div className="coll-fup">
+        <div className="coll-rcpts">
+          <h4>💵 Receipts from ERP {ag.receipts.length ? `(${ag.receipts.length})` : ''} <span className="muted small" style={{ fontWeight: 400 }}>— voucher-wise, synced hourly</span></h4>
+          <Receipts list={ag.receipts} />
+        </div>
+        <div className="fup-log">
+          <div className="fup-log-head"><h4>🗒️ Conversation history {ag.count ? `(${ag.count})` : ''}</h4></div>
+          <Timeline entries={ag.entries} waCount={ag.waCount} />
+        </div>
+      </div>
+
+      {form && <FollowupForm p={p} bills={form.bills} salesmen={salesmen} demo={demo} onClose={() => setForm(null)} onSaved={saved} />}
     </div>
   )
 }
@@ -421,7 +492,7 @@ const COLS = [
   { key: 'oldest_od', label: 'Oldest Due', on: true, sort: 'oldest_od', title: 'How many days the oldest bill is overdue' },
   { key: 'aging', label: 'Aging', on: true, title: 'How old the money is — green is new, red is very old' },
   { key: 'credit_limit', label: 'Credit Limit', on: true, title: 'Credit limit given to the party and how much is used' },
-  { key: 'last_pay', label: 'Last Payment', on: true },
+  { key: 'last_pay', label: 'Last Payment', on: true, title: 'Last receipt in ERP' },
   { key: 'next', label: 'Next F/Up', on: true, sort: 'next' },
   { key: 'flw', label: 'Follow-ups', on: true, sort: 'flw', title: 'How many times this party has been chased' },
   { key: 'stage', label: 'Last Stage', on: true },
@@ -433,24 +504,27 @@ const COLS = [
 const COLS_LS = 'fms_coll_cols'
 const loadCols = () => { try { const v = JSON.parse(localStorage.getItem(COLS_LS) || 'null'); if (v && typeof v === 'object') return v } catch { /* ignore */ } return {} }
 
-const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at'
-// Supabase ek call me max 1000 rows deta hai — saare party-level follow-ups page-wise lao
-async function fetchAllFollowups() {
+// Supabase ek call me max 1000 rows deta hai — page-wise lao
+async function fetchAll(table, cols, apply) {
   const out = []; const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase.from('fms_followups').select(FUP_COLS).not('party_name', 'is', null)
-      .order('created_at', { ascending: false }).range(from, from + PAGE - 1)
+    let q = supabase.from(table).select(cols)
+    q = apply(q).range(from, from + PAGE - 1)
+    const { data, error } = await q
     if (error || !data?.length) break
     out.push(...data)
     if (data.length < PAGE) break
   }
   return out
 }
+const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at'
+const RCPT_COLS = 'company_id,pay_vno,party_name,pay_date,pay_type,amount,bills'
 
 export default function Collection() {
   const demo = new URLSearchParams(window.location.search).has('demo')
   const [rows, setRows] = useState(null)
   const [fups, setFups] = useState([])
+  const [rcpts, setRcpts] = useState([])
   const [q, setQ] = useState('')
   const [salesman, setSalesman] = useState('')
   const [preset, setPreset] = useState('all')
@@ -470,11 +544,14 @@ export default function Collection() {
       fetch('/demo-collection.json').then((r) => r.json()).then(setRows).catch(() => setRows([]))
       return
     }
-    Promise.all([supabase.from('fms_collection').select('*'), fetchAllFollowups()])
-      .then(([{ data }, f]) => { setRows(data || []); setFups(f) })
+    Promise.all([
+      supabase.from('fms_collection').select('*'),
+      fetchAll('fms_followups', FUP_COLS, (x) => x.not('party_name', 'is', null).order('created_at', { ascending: false })),
+      fetchAll('fms_receipts', RCPT_COLS, (x) => x.order('pay_date', { ascending: false, nullsFirst: false })),
+    ]).then(([{ data }, f, r]) => { setRows(data || []); setFups(f); setRcpts(r) })
   }, [tick, demo])
 
-  const agg = useMemo(() => buildAgg(fups), [fups])
+  const agg = useMemo(() => buildAgg(fups, rcpts), [fups, rcpts])
   const agOf = (p) => agg.get(normKey(p.party_name)) || EMPTY_AGG
 
   const salesmen = useMemo(() => {
@@ -485,18 +562,22 @@ export default function Collection() {
   // modal ke liye: save/re-sync ke baad bhi fresh row mile
   const openParty = useMemo(() => (rows || []).find((r) => r.party_name === open) || null, [rows, open])
 
-  // Pulse: chuni range me kitna paisa aaya, kitne follow-up hue, kisne kitne kiye
+  // Pulse: chuni range me ERP receipts (asli paisa) + logged follow-ups, kisne kitne kiye
   const inRange = (iso) => { const d = String(iso || '').slice(0, 10); return (!from || d >= from) && (!to || d <= to) }
   const pulse = useMemo(() => {
-    const r = { recv: 0, recvN: 0, done: 0, byUser: {}, recvParties: new Set() }
+    const r = { erp: 0, erpN: 0, logged: 0, done: 0, byUser: {}, recvParties: new Set() }
+    for (const x of rcpts) {
+      if (!x.pay_date || !inRange(x.pay_date)) continue
+      r.erp += Number(x.amount || 0); r.erpN++; r.recvParties.add(normKey(x.party_name))
+    }
     for (const f of fups) {
       if (f.mode === 'whatsapp' || !inRange(f.created_at)) continue
       r.done++
       const u = userName(f.created_by) || '?'; r.byUser[u] = (r.byUser[u] || 0) + 1
-      if (Number(f.amount_received) > 0) { r.recv += Number(f.amount_received); r.recvN++; r.recvParties.add(normKey(f.party_name)) }
+      if (Number(f.amount_received) > 0) { r.logged += Number(f.amount_received); r.recvParties.add(normKey(f.party_name)) }
     }
     return r
-  }, [fups, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fups, rcpts, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // har party ka derived data ek baar (filter/sort/KPI sab isi se)
   const enriched = useMemo(() => (rows || []).map((p) => {
@@ -576,7 +657,11 @@ export default function Collection() {
       case 'oldest_od': return p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'
       case 'aging': return <AgingChips aging={p.aging} />
       case 'credit_limit': return <LimitBar pending={p.total_pending} limit={p.credit_limit} />
-      case 'last_pay': return p.last_pay_amt ? <span className="small">{inrShort(p.last_pay_amt)}<div className="muted">{dmy(p.last_pay_date)}</div></span> : <span className="muted">—</span>
+      case 'last_pay': {
+        const r = ag.receipts[0]
+        if (r) return <span className="small">{inrShort(r.amount)}<div className="muted">{dmy(r.pay_date)} · {r.pay_type}</div></span>
+        return p.last_pay_amt ? <span className="small">{inrShort(p.last_pay_amt)}<div className="muted">{dmy(p.last_pay_date)}</div></span> : <span className="muted">—</span>
+      }
       case 'next': return <BucketPill b={bucket} date={p.next_followup_date} />
       case 'flw': return ag.count || ag.waCount
         ? <span className="small"><span className={`flw-pill ${ag.count >= 5 ? 'hi' : ''}`} title={`${ag.count} calls logged · ${ag.waCount} WhatsApp sent`}>{ag.count}x</span>{ag.last && <div className="muted">{dmy(ag.last.created_at)} · {userName(ag.last.created_by)}</div>}</span>
@@ -612,7 +697,7 @@ export default function Collection() {
             <b>How to use (3 steps):</b>
             <span>1️⃣ Click the top party</span>
             <span>2️⃣ 📞 Call or 📤 WhatsApp them</span>
-            <span>3️⃣ Pick the stage, note what they said + next date → Save</span>
+            <span>3️⃣ Click 📝 on the bill you talked about, pick the stage, note + next date → Save</span>
             <button className="btn ghost sm" onClick={dismissHelp}>✕ Got it</button>
           </div>
         )}
@@ -641,7 +726,7 @@ export default function Collection() {
           </button>
         </div>
 
-        {/* Pulse: date range me received + follow-ups done (team productivity) */}
+        {/* Pulse: date range me ERP receipts + follow-ups done (team productivity) */}
         <div className="coll-pulse">
           <div className="pulse-head">
             <div><b>Collection pulse</b> <span className="muted small">— what happened in this date range</span></div>
@@ -654,8 +739,9 @@ export default function Collection() {
             </div>
           </div>
           <div className="pulse-grid">
-            <button className={preset === 'received' ? 'pulse-stat green active' : 'pulse-stat green'} onClick={() => setPreset(preset === 'received' ? 'all' : 'received')} title="Amounts logged as received in follow-up notes (click to see those parties)">
-              <b>{inrShort(pulse.recv)}</b><span>💵 Received · {pulse.recvN} entr{pulse.recvN === 1 ? 'y' : 'ies'} · {rangeTxt}</span>
+            <button className={preset === 'received' ? 'pulse-stat green active' : 'pulse-stat green'} onClick={() => setPreset(preset === 'received' ? 'all' : 'received')} title="Receipts in ERP (Payment.ashx) — click to see those parties">
+              <b>{inrShort(pulse.erp)}</b><span>💵 Received (ERP) · {pulse.erpN} voucher{pulse.erpN === 1 ? '' : 's'} · {rangeTxt}</span>
+              {pulse.logged > 0 && <span>claimed in notes: {inrShort(pulse.logged)}</span>}
             </button>
             <div className="pulse-stat"><b>{pulse.done}</b><span>📞 Follow-ups done · {rangeTxt}</span></div>
             <div className="pulse-stat wide">
@@ -731,7 +817,7 @@ export default function Collection() {
                     {p.mobile && <a className="btn ghost sm" href={`tel:${p.mobile}`} title={`Call: ${p.mobile}`}>📞</a>}
                     {wa && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer" title="Send WhatsApp reminder"
                       onClick={() => { logWaSendParty(p.party_name, 'Sent WhatsApp payment reminder'); setTimeout(() => setTick((t) => t + 1), 800) }}>📤</a>}
-                    <button className="btn ghost sm" title="Add a follow-up note" onClick={() => setOpen(p.party_name)}>📝</button>
+                    <button className="btn ghost sm" title="Open party — bills + follow-up" onClick={() => setOpen(p.party_name)}>📝</button>
                   </td>
                 </tr>
               )

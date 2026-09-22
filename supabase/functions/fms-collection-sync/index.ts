@@ -3,6 +3,7 @@
 const DEFAULTS = {
   payfup: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/PaymentFollowup.ashx",
   urgent: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/UrgentPaymentFollow.ashx",
+  payment: "http://eksai12.ddns.net:8786/ek_api/telegramApi/Payment.ashx",
 };
 
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
@@ -28,6 +29,15 @@ function dmy(s: unknown) {
   return `20${m[3]}-${String(MONTHS[m[2]]).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
 }
 
+// Payment.ashx ka PayVNo 'AS-BR-26-27-0230' -> 'BR' -> readable type
+const PAY_TYPES: Record<string, string> = { BR: "Bank", CR: "Cash", CN: "Credit note", DN: "Debit note", JR: "Journal" };
+function payType(vno: string, typeId: unknown) {
+  const m = /^[A-Z]+-([A-Z]{2})-/.exec(vno);
+  if (m && PAY_TYPES[m[1]]) return PAY_TYPES[m[1]];
+  if (Number(typeId) === 6) return "Purchase adj";
+  return "Other";
+}
+
 const BUCKETS: [string, string][] = [
   ["0 - 30 Days", "b0_30"], ["31 - 60 Days", "b31_60"], ["61 - 90 Days", "b61_90"],
   ["91 - 120 Days", "b91_120"], ["121 - 150 Days", "b121_150"], ["151 - 180 Days", "b151_180"], ["Above 180 Days", "b180p"],
@@ -39,6 +49,7 @@ Deno.serve(async () => {
     const cfg = erpRow?.[0]?.value || {};
     const URL_PAYFUP = cfg.payfup_url || DEFAULTS.payfup;
     const URL_URGENT = cfg.urgent_url || DEFAULTS.urgent;
+    const URL_PAYMENT = cfg.payment_url || DEFAULTS.payment;
 
     const [pf, ug] = await Promise.all([
       fetch(URL_PAYFUP, { signal: AbortSignal.timeout(180000) }).then((r) => r.json()),
@@ -141,6 +152,57 @@ Deno.serve(async () => {
       if (ugTotal > (e.total_pending || 0)) e.total_pending = ugTotal;
     }
 
+    // 3) Payment.ashx: receipt vouchers (bill-wise allocated). Fail ho to bills bina pay info ke jaate hain.
+    // Har row = ek bill x ek payment voucher; PaidAmt = us voucher ka us bill par laga hissa,
+    // TotalAdjusted = bill par kul, StillPending = bill ka balance, PayStatus Full/Part/Pending.
+    let payRows: any[] = [];
+    try {
+      const pj = await fetch(URL_PAYMENT, { signal: AbortSignal.timeout(180000) }).then((r) => r.json());
+      payRows = Array.isArray(pj) ? pj : pj?.DataRec || [];
+    } catch { payRows = []; }
+    let receipts: any[] = [];
+    if (payRows.length) {
+      const payByBill = new Map<string, any[]>();   // norm(party)|norm(bill) -> rows
+      const vouchers = new Map<string, any>();      // company|vno -> receipt
+      for (const r of payRows) {
+        const bk = norm(r.PartyName) + "|" + norm(r.BillNo);
+        if (!payByBill.has(bk)) payByBill.set(bk, []);
+        payByBill.get(bk)!.push(r);
+        const vno = String(r.PayVNo || "").trim();
+        if (!vno) continue;
+        const cid = Number(r.CompanyID) || 0;
+        const ck = `${cid}|${vno}`;
+        let v = vouchers.get(ck);
+        if (!v) {
+          v = { company_id: cid, pay_vno: vno, party_name: String(r.PartyName || "").trim(), pay_date: dmy(r.PayDate), pay_type: payType(vno, r.PayVoucherTypeID), amount: 0, bills: [], synced_at: runAt };
+          vouchers.set(ck, v);
+        }
+        v.amount += num(r.PaidAmt);
+        v.bills.push({ vno: String(r.BillNo || "").trim(), amt: num(r.PaidAmt) });
+      }
+      receipts = [...vouchers.values()];
+      // bills me ERP payment status jodo
+      for (const e of map.values()) {
+        const pk = norm(e.party_name);
+        for (const b of e.bills) {
+          if (!b.vno) continue;
+          const rows = payByBill.get(pk + "|" + norm(b.vno));
+          if (!rows) continue;
+          const billAmt = num(rows[0].BillAmt);
+          const anyFull = rows.some((r) => r.PayStatus === "Full");
+          const sp = rows.map((r) => r.StillPending).filter((x) => x !== "" && x != null).map(num);
+          const stillPending = anyFull ? 0 : (sp.length ? Math.min(...sp) : billAmt);
+          const received = Math.max(0, billAmt - stillPending);
+          const vrows = rows.filter((r) => r.PayVNo);
+          b.pay_status = anyFull ? "Full" : received > 0 ? "Part" : "Pending";
+          b.received = received;
+          b.still_pending = stillPending;
+          b.pay_vnos = vrows.map((r) => ({ vno: String(r.PayVNo).trim(), date: dmy(r.PayDate), amt: num(r.PaidAmt) }));
+          b.last_pay_date = vrows.map((r) => dmy(r.PayDate)).filter(Boolean).sort().pop() || null;
+        }
+      }
+    }
+
     const payload = [...map.values()];
     // 500 ke batches me upsert (row size ki wajah se)
     for (let i = 0; i < payload.length; i += 500) {
@@ -152,9 +214,17 @@ Deno.serve(async () => {
     }
     // jo parties ab list me nahi (poora paid) — hata do
     await sb(`fms_collection?synced_at=lt.${encodeURIComponent(runAt)}`, { method: "DELETE", headers: { Prefer: "return=minimal" } });
+    // receipts upsert (voucher-wise); purane vouchers delete nahi hote
+    for (let i = 0; i < receipts.length; i += 500) {
+      await sb("fms_receipts?on_conflict=company_id,pay_vno", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(receipts.slice(i, i + 500)),
+      });
+    }
 
     const total = payload.reduce((a, p) => a + (p.total_pending || 0), 0);
-    return new Response(JSON.stringify({ ok: true, parties: payload.length, total_pending: Math.round(total), at: runAt }), {
+    return new Response(JSON.stringify({ ok: true, parties: payload.length, total_pending: Math.round(total), receipts: receipts.length, payment_rows: payRows.length, at: runAt }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {

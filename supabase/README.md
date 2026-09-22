@@ -12,7 +12,7 @@ function NAHI badalta — deploy karna padta hai (`supabase functions deploy <na
 | `fms-sync` | Pura ERP sync server-side — orders + delays + scores `fms_orders` me | Cron: har 30 min (`fms-auto-sync`, `*/30 * * * *`) |
 | `fms-digest` | Roz subah ka Telegram digest (counts, follow-ups, payment overdue, Collection: Missed / Aaj due / Broken promise / kal ka kaam) | Cron: 9:00 AM IST (`fms-daily-digest`, `30 3 * * *` UTC) |
 | `fms-alerts` | `?mode=instant`: naya order + confirm late; `?mode=dispatch`: 2 PM dispatch reminder | Cron: `5,35 * * * *` (instant) aur 2:00 PM IST (`30 8 * * *` UTC) |
-| `fms-collection-sync` | Poore ledger ka party-wise outstanding (PaymentFollowup + UrgentPaymentFollow) -> `fms_collection` (aging, bills, PDC, credit limit). Fully-paid parties auto-delete. | Cron: har ghante :20 par (`fms-collection-sync`, `20 * * * *`) |
+| `fms-collection-sync` | Poore ledger ka party-wise outstanding (PaymentFollowup + UrgentPaymentFollow) -> `fms_collection` (aging, bills, PDC, credit limit). Fully-paid parties auto-delete. Payment.ashx se receipts voucher-wise -> `fms_receipts`, aur har bill me `pay_status/received/still_pending/pay_vnos`. | Cron: har ghante :20 par (`fms-collection-sync`, `20 * * * *`) |
 
 ## Zaroori baat — logic 2 jagah hai
 
@@ -67,3 +67,11 @@ note_updated_by, note_updated_at`. `fms-collection-sync` ka upsert sirf apne col
 isliye `next_followup_date` / `permanent_note` sync me preserve rehte hain (fully-paid party delete
 hone par note bhi jaata hai). Sab derived values (follow-up count, last stage, broken promise,
 claimed-paid bills) app me `fms_followups` se compute hote hain — koi trigger nahi.
+
+## ERP receipts (`fms_receipts`, migration `fms_receipts_from_payment_api`)
+
+Payment.ashx ki har row = ek bill x ek payment voucher. `PaidAmt` us voucher ka us bill par laga
+hissa hai (bill-level; har bill ke liye sum(PaidAmt) = TotalAdjusted), `StillPending` bill ka balance,
+`PayStatus` Full/Part/Pending. `fms-collection-sync` inhe voucher-wise group karke `fms_receipts`
+(PK company_id + pay_vno) me upsert karta hai — purane vouchers delete nahi hote. API sirf Jan-2026 se
+aage ke bills cover karta hai, isliye ek voucher ka amount usi window ke bills ka jod hai.
