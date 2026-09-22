@@ -51,6 +51,15 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
   `fms_coll_cols`) + Print (current filter).
 
+## My Parties tab (salesman)
+- Shows only the logged-in salesman's parties (+ those transferred to them). Login -> ERP salesman
+  name: admin sets it in User Control ("Salesman (My Parties)"), else auto-match by Google name /
+  email first name (only when exactly one salesman matches). Admins get a "view as salesman" picker.
+- Row click expands: overdue bills (tick to link), ERP receipts, history, and the **commitment form**
+  (promised amount + date + remark) -> `fms_followups` stage Committed; CRM's next follow-up date is
+  pulled to the promised day if it was blank or later.
+- Shared helpers live in `src/lib/coll.js`, shared UI bits in `src/components/CollBits.jsx`.
+
 ## How it works
 - **Sync ERP** button pulls MobileSO.ashx via the proxy, aggregates line-rows per Mobile SO,
   and upserts into `fms_orders` (custom column values & payment status are preserved).

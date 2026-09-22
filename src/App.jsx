@@ -5,6 +5,7 @@ import Grid from './components/Grid'
 import ActionCenter from './components/ActionCenter'
 import Scoreboard from './components/Scoreboard'
 import Collection from './components/Collection'
+import Salesman from './components/Salesman'
 import StageConfig from './components/StageConfig'
 import UserControl, { APP_TABS } from './components/UserControl'
 import PendingQty from './components/PendingQty'
@@ -181,6 +182,7 @@ export default function App() {
         {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} partyInfo={partyInfo} stockTick={stockTick} booting={booting} onChanged={loadAll} />}
         {tab === 'pendqty' && <PendingQty />}
         {tab === 'coll' && <Collection />}
+        {tab === 'sales' && <Salesman user={user} access={access} />}
         {tab === 'score' && <Scoreboard orders={orders} stages={stages} scoring={scoring} />}
         {tab === 'stages' && <StageConfig stages={stages} scoring={scoring} onChanged={loadAll} />}
         {tab === 'users' && access?.is_admin && <UserControl myEmail={user.email} />}

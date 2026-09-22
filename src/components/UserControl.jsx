@@ -7,6 +7,7 @@ export const APP_TABS = [
   ['fms', 'FMS Grid'],
   ['pendqty', 'Pending Order'],
   ['coll', 'Collection'],
+  ['sales', 'My Parties'],
   ['score', 'Scoreboard'],
   ['stages', 'Stage Plan'],
 ]
@@ -18,9 +19,20 @@ export default function UserControl({ myEmail, onChanged }) {
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [msg, setMsg] = useState('')
+  const [salesmen, setSalesmen] = useState([])   // ERP salesman names (fms_collection se) — My Parties mapping ke liye
 
   const load = () => supabase.from('fms_users').select('*').order('created_at').then(({ data }) => setRows(data || []))
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    supabase.from('fms_collection').select('salesman').then(({ data }) => setSalesmen([...new Set((data || []).map((r) => r.salesman).filter(Boolean))].sort()))
+  }, [])
+
+  const setSalesman = async (u, name) => {
+    const { error } = await supabase.from('fms_users').update({ salesman: name || null }).eq('email', u.email)
+    if (error) { flash('❌ ' + error.message); return }
+    flash(name ? `✅ ${u.email} → My Parties shows ${name}'s parties` : '✅ Mapping removed — auto-match by name will be used')
+    load(); onChanged?.()
+  }
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(''), 5000) }
 
@@ -84,6 +96,7 @@ export default function UserControl({ myEmail, onChanged }) {
             <tr>
               <th>User</th>
               {APP_TABS.map(([k, l]) => <th key={k}>{l}</th>)}
+              <th title="ERP salesman whose parties this login sees in My Parties. Blank = auto-match by Google name / email">Salesman (My Parties)</th>
               <th title="Admin sees this User Control tab and can change access">Admin</th>
               <th></th>
             </tr>
@@ -97,11 +110,18 @@ export default function UserControl({ myEmail, onChanged }) {
                     <input type="checkbox" checked={(u.tabs || []).includes(k)} onChange={(e) => setTabs(u, k, e.target.checked)} />
                   </td>
                 ))}
+                <td>
+                  <select value={u.salesman || ''} onChange={(e) => setSalesman(u, e.target.value)} title="Blank = auto-match by name">
+                    <option value="">auto (by name)</option>
+                    {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
+                    {u.salesman && !salesmen.includes(u.salesman) && <option value={u.salesman}>{u.salesman}</option>}
+                  </select>
+                </td>
                 <td className="uc-chk"><input type="checkbox" checked={!!u.is_admin} onChange={(e) => setAdmin(u, e.target.checked)} /></td>
                 <td><button className="btn ghost sm" title="Remove from list (back to default access)" onClick={() => removeUser(u)}>🗑</button></td>
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={APP_TABS.length + 3} className="muted">No users yet — add one above.</td></tr>}
+            {!rows.length && <tr><td colSpan={APP_TABS.length + 4} className="muted">No users yet — add one above.</td></tr>}
           </tbody>
         </table>
         <p className="muted small uc-note">Note: this controls which tabs are visible in the app. All logged-in users still share the same database access level — role-based data security can be added later if needed.</p>

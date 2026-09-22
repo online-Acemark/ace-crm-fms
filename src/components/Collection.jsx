@@ -2,118 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
+import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, userName, isUrgent, STAGES, STAGE_HINT, PAY_MODES, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS } from '../lib/coll'
+import { AgingChips, LimitBar, StageChip, BucketPill, Timeline, Receipts } from './CollBits'
 
 // Collection tab: poore ledger ka party-wise outstanding (fms_collection, har ghante ERP se sync)
 // + follow-up system (fms_followups): stage, bills, commitment, transfer, permanent note
 // + ERP receipts (fms_receipts, Payment.ashx voucher-wise) — paisa aaya ya nahi ERP batata hai, manual entry sirf "claim".
 // Design goal: naya CRM executive bina training ke chala le — sabse zaroori party UPAR,
 // har row par seedha Call/WhatsApp/Note, aur ek-click filter chips.
-const BUCKETS = [
-  ['b0_30', '0-30'], ['b31_60', '31-60'], ['b61_90', '61-90'], ['b91_120', '91-120'],
-  ['b121_150', '121-150'], ['b151_180', '151-180'], ['b180p', '180+'],
-]
-const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })
-// bade amounts chhote me: 12.5L, 1.2Cr — naye banda ko ek nazar me samajh aaye
-const inrShort = (v) => {
-  const n = Number(v || 0)
-  if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2).replace(/\.?0+$/, '') + ' Cr'
-  if (n >= 1e5) return '₹' + (n / 1e5).toFixed(1).replace(/\.0$/, '') + ' L'
-  return inr(n)
-}
-const dmy = (v) => v ? new Date(v).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—'
-const dmyt = (v) => v ? new Date(v).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
-const pad = (n) => String(n).padStart(2, '0')
-const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const toLocalInput = (dt) => `${isoDay(dt)}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
-const startOfDay = (v) => { const d = new Date(v); d.setHours(0, 0, 0, 0); return d }
-// kitne din baad/pehle (date-only): -1 = kal beet gaya, 0 = aaj, 1 = kal
-const dayDiff = (v) => Math.round((startOfDay(v) - startOfDay(new Date())) / 864e5)
-const normKey = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ')
-const userName = (e) => String(e || '').split('@')[0]
-
-const isCross = (p) => Number(p.credit_limit) > 0 && Number(p.total_pending) > Number(p.credit_limit)
-const isUrgent = (p) => (p.oldest_od || 0) > 180 || isCross(p)
-
-// ---------- follow-up stages (form dropdown) ----------
-const STAGES = ['Committed', 'Payment received', 'PDC received', 'Dispute', 'No response', 'CRM Support', 'Transfer', 'Close']
-const STAGE_CLS = {
-  'Committed': 'st-commit', 'Payment received': 'st-recv', 'PDC received': 'st-recv', 'Dispute': 'st-bad',
-  'No response': 'st-bad', 'CRM Support': 'st-park', 'Transfer': 'st-park', 'Close': 'st-close',
-}
-const STAGE_HINT = {
-  'Committed': 'Party promised to pay — enter the amount and the date they promised',
-  'Payment received': 'Party says money is sent — enter amount + mode. ERP sync (hourly) confirms it against the bills',
-  'PDC received': 'Post-dated cheque received — enter amount, mode = Cheque/PDC',
-  'Dispute': 'Party disputes the bill (rate / damage / short supply) — write details',
-  'No response': 'Phone not picked / switched off — set the next date',
-  'CRM Support': 'Needs office help (ledger, credit note) — party leaves the Missed list until resolved',
-  'Transfer': 'Hand this party to another salesman — pick the name and give the reason',
-  'Close': 'Nothing more to chase (fully paid / written off) — party leaves Today & Tomorrow lists',
-}
-const PAY_MODES = ['RTGS/NEFT', 'UPI', 'Cash', 'Cheque', 'PDC', 'Other']
-
-// ---------- follow-up status buckets (from next_followup_date + latest stage) ----------
-const BUCKET_LABEL = { missed: 'Missed', today: 'Today', tomorrow: 'Tomorrow', week: 'This week', later: 'Later', nodate: 'No date', closed: 'Closed' }
-const BUCKET_CLS = { missed: 'bk-missed', today: 'bk-today', tomorrow: 'bk-tom', week: 'bk-week', later: 'bk-later', nodate: 'bk-none', closed: 'bk-closed' }
-function bucketOf(p, ag) {
-  if (ag.lastStage === 'Close') return 'closed'
-  if (!p.next_followup_date) return 'nodate'
-  const d = dayDiff(p.next_followup_date)
-  if (d < 0) return (ag.doneToday || ag.lastStage === 'CRM Support') ? 'later' : 'missed'
-  if (d === 0) return 'today'
-  if (d === 1) return 'tomorrow'
-  const t = new Date(); const dow = (t.getDay() + 6) % 7   // Mon=0 … Sun=6
-  return d <= 6 - dow ? 'week' : 'later'
-}
-
-// Promise tuta? Committed date beet gayi, uske baad paisa nahi aaya (ERP receipt ya logged), aur party close nahi hui.
-function isBroken(ag) {
-  const c = ag.committed
-  if (!c || ag.lastStage === 'Close') return false
-  if (dayDiff(c.date) >= 0) return false
-  const cAt = new Date(c.at)
-  if (ag.entries.some((f) => Number(f.amount_received) > 0 && new Date(f.created_at) > cAt)) return false
-  const cDay = String(c.at).slice(0, 10)
-  return !ag.receipts.some((r) => r.pay_date && r.pay_date >= cDay)
-}
-
-const EMPTY_AGG = { entries: [], waCount: 0, count: 0, last: null, lastStage: '', doneToday: false, committed: null, transferTo: '', transferReason: '', paid: new Map(), recvTotal: 0, receipts: [] }
-// fms_followups (party-level) + fms_receipts -> per party summary. Entries created_at DESC aate hain.
-function buildAgg(fups, receipts) {
-  const m = new Map()
-  const today = isoDay()
-  const get = (k) => { let a = m.get(k); if (!a) { a = { ...EMPTY_AGG, entries: [], paid: new Map(), receipts: [] }; m.set(k, a) } return a }
-  for (const f of fups) {
-    const k = normKey(f.party_name); if (!k) continue
-    const a = get(k)
-    if (f.mode === 'whatsapp') { a.waCount++; continue }
-    a.entries.push(f); a.count++
-    if (!a.last) { a.last = f; a.lastStage = f.stage || '' }
-    if (String(f.created_at || '').slice(0, 10) === today) a.doneToday = true
-    if (!a.committed && f.committed_date) a.committed = { amount: Number(f.committed_amount) || 0, date: f.committed_date, at: f.created_at, by: f.created_by }
-    if (!a.transferTo && f.transfer_to) { a.transferTo = f.transfer_to; a.transferReason = f.transfer_reason || '' }
-    if (Number(f.amount_received) > 0) {
-      a.recvTotal += Number(f.amount_received)
-      for (const v of (Array.isArray(f.bill_nos) ? f.bill_nos : [])) if (v && !a.paid.has(v)) a.paid.set(v, { at: f.created_at, amount: Number(f.amount_received) })
-    }
-  }
-  for (const r of receipts) { const k = normKey(r.party_name); if (k) get(k).receipts.push(r) }   // pay_date DESC
-  return m
-}
-
-// Priority: jitna bada number, utna upar. Naya banda bas upar se neeche kaam kare.
-function priorityOf(p, ag, bucket) {
-  if (p.permanent_note) return { rank: -1, label: 'Excluded', cls: 'pr-mild', hint: 'Permanent note set — party is out of the follow-up worklist' }
-  if (bucket === 'closed') return { rank: 0, label: 'Closed', cls: 'pr-ok', hint: 'Last stage = Close. Will disappear after ERP shows it paid' }
-  if (isBroken(ag)) return { rank: 6, label: 'Broken promise', cls: 'pr-hot', hint: `Promised ${inrShort(ag.committed.amount)} by ${dmy(ag.committed.date)} — nothing received since` }
-  if (bucket === 'missed') return { rank: 5, label: 'Missed', cls: 'pr-hot', hint: 'Follow-up date has passed and nobody called' }
-  if (bucket === 'today') return { rank: 4, label: 'Due today', cls: 'pr-due', hint: 'You set a follow-up date for today — call this party first' }
-  if (isUrgent(p)) return { rank: 3, label: 'Urgent', cls: 'pr-hot', hint: isCross(p) ? 'Party has crossed the credit limit' : 'Oldest bill is more than 6 months overdue' }
-  if ((p.oldest_od || 0) > 90) return { rank: 2, label: 'Act soon', cls: 'pr-warm', hint: 'Oldest bill is more than 3 months overdue' }
-  if ((p.oldest_od || 0) > 30) return { rank: 1, label: 'Watch', cls: 'pr-mild', hint: 'Oldest bill is more than 1 month overdue' }
-  return { rank: 0, label: 'OK', cls: 'pr-ok', hint: 'Nothing is very old yet' }
-}
-
 // Ek-click filter chips — do groups: follow-up status + situation
 const STATUS_PRESETS = [
   { key: 'all', label: 'All' }, { key: 'missed', label: '⏰ Missed' }, { key: 'today', label: '📅 Today' },
@@ -124,88 +20,6 @@ const SITUATION_PRESETS = [
   { key: 'committed', label: '🤝 Committed / PDC' }, { key: 'pdc', label: '🧾 PDC received' }, { key: 'flw5', label: '🔁 5+ follow-ups' },
   { key: 'received', label: '💵 Received (range)' }, { key: 'transferred', label: '↪ Transferred' }, { key: 'closed', label: '✅ Closed' }, { key: 'excluded', label: '🚫 Excluded' },
 ]
-
-function AgingChips({ aging }) {
-  const a = aging || {}
-  const cls = ['bkt-ok', 'bkt-ok', 'bkt-8', 'bkt-8', 'bkt-30', 'bkt-30', 'bkt-30']
-  const chips = BUCKETS.map(([k, label], i) => ({ k, label, i, v: Number(a[k] || 0) })).filter((c) => c.v > 0)
-  if (!chips.length) return <span className="muted small">—</span>
-  return (
-    <div className="aging-chips">
-      {chips.map((c) => (
-        <span key={c.k} className={`age-chip ${cls[c.i]}`} title={`${c.label} days old: ${inr(c.v)}`}>{c.label}d: {inrShort(c.v)}</span>
-      ))}
-    </div>
-  )
-}
-
-function LimitBar({ pending, limit }) {
-  if (!Number(limit)) return <span className="muted small">no limit set</span>
-  const pct = (Number(pending) / Number(limit)) * 100
-  const over = pct > 100
-  return (
-    <div className="limit-bar-wrap" title={`Pending ${inr(pending)} / Limit ${inr(limit)} (${Math.round(pct)}% used)`}>
-      <div className="limit-bar"><div className={over ? 'limit-fill over' : 'limit-fill'} style={{ width: Math.min(pct, 100) + '%' }} /></div>
-      <span className={over ? 'small red-t' : 'small muted'}>{Math.round(pct)}%{over && ' ⚠️'}</span>
-    </div>
-  )
-}
-
-const StageChip = ({ s }) => s ? <span className={`stage-chip ${STAGE_CLS[s] || ''}`}>{s}</span> : null
-const BucketPill = ({ b, date }) => <span className={`bk-pill ${BUCKET_CLS[b]}`}>{BUCKET_LABEL[b]}{date && b !== 'nodate' && b !== 'closed' ? ' · ' + dmy(date) : ''}</span>
-
-// ---------- follow-up timeline (party ki poori baat-cheet) ----------
-function Timeline({ entries, waCount }) {
-  if (!entries.length && !waCount) return <p className="muted small">No conversation recorded with this party yet — you are the first to call.</p>
-  return (
-    <div className="tl">
-      {waCount > 0 && <div className="muted small" style={{ marginBottom: 4 }}>📤 {waCount} WhatsApp reminder{waCount > 1 ? 's' : ''} sent (auto-logged)</div>}
-      {entries.map((f) => (
-        <div key={f.id} className="tl-item">
-          <div className="tl-dot" />
-          <div className="tl-body">
-            <div className="tl-top">
-              <b>{dmyt(f.created_at)}</b>
-              <StageChip s={f.stage} />
-              {Number(f.amount_received) > 0 && <span className="stage-chip st-recv">{inr(f.amount_received)} received{f.payment_mode ? ' · ' + f.payment_mode : ''}</span>}
-              {f.committed_date && <span className="stage-chip st-commit">Promised {inr(f.committed_amount)} by {dmy(f.committed_date)}</span>}
-              {f.transfer_to && <span className="stage-chip st-park">↪ to {f.transfer_to}{f.transfer_reason ? ' — ' + f.transfer_reason : ''}</span>}
-              {f.created_by && <span className="muted small">— {userName(f.created_by)}</span>}
-            </div>
-            <div className="tl-says">{f.remarks || <span className="muted">(nothing written)</span>}</div>
-            {Array.isArray(f.bill_nos) && f.bill_nos.length > 0 && <div className="tl-bills">Bills: {f.bill_nos.join(', ')}</div>}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ---------- ERP receipts (Payment.ashx) — kab, kaunse voucher se, kitna, kin bills par ----------
-function Receipts({ list }) {
-  const [all, setAll] = useState(false)
-  if (!list.length) return <p className="muted small">No receipt found in ERP for this party (Payment.ashx covers bills from Jan 2026).</p>
-  const shown = all ? list : list.slice(0, 8)
-  return (
-    <div className="tbl-wrap-inner">
-      <table className="cfg-tbl rcpt-tbl">
-        <thead><tr><th>Date</th><th>Voucher</th><th>Type</th><th>Amount</th><th>Adjusted against</th></tr></thead>
-        <tbody>
-          {shown.map((r) => (
-            <tr key={r.company_id + '|' + r.pay_vno}>
-              <td>{dmy(r.pay_date)}</td>
-              <td className="small"><b>{r.pay_vno}</b></td>
-              <td className="small">{r.pay_type || '—'}</td>
-              <td><b className="green-t">{inr(r.amount)}</b></td>
-              <td className="small">{(r.bills || []).map((b, i) => <span key={i} className="bill-tag static" title={inr(b.amt)}>{b.vno}</span>)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {list.length > 8 && <button className="link small" onClick={() => setAll((v) => !v)}>{all ? 'Show less' : `Show all ${list.length} receipts`}</button>}
-    </div>
-  )
-}
 
 // ---------- Follow-up form (chhota modal): bill-wise ya party-level ----------
 // bills = [{ vno, pending }] jin par ye note hai (khali = poora account)
@@ -503,22 +317,6 @@ const COLS = [
 ]
 const COLS_LS = 'fms_coll_cols'
 const loadCols = () => { try { const v = JSON.parse(localStorage.getItem(COLS_LS) || 'null'); if (v && typeof v === 'object') return v } catch { /* ignore */ } return {} }
-
-// Supabase ek call me max 1000 rows deta hai — page-wise lao
-async function fetchAll(table, cols, apply) {
-  const out = []; const PAGE = 1000
-  for (let from = 0; ; from += PAGE) {
-    let q = supabase.from(table).select(cols)
-    q = apply(q).range(from, from + PAGE - 1)
-    const { data, error } = await q
-    if (error || !data?.length) break
-    out.push(...data)
-    if (data.length < PAGE) break
-  }
-  return out
-}
-const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at'
-const RCPT_COLS = 'company_id,pay_vno,party_name,pay_date,pay_type,amount,bills'
 
 export default function Collection() {
   const demo = new URLSearchParams(window.location.search).has('demo')
