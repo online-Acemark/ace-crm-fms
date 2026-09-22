@@ -152,10 +152,15 @@ export default function Salesman({ user, access }) {
   const agOf = (p) => agg.get(normKey(p.party_name)) || EMPTY_AGG
   const salesmen = useMemo(() => [...new Set((rows || []).map((r) => r.salesman).filter(Boolean))].sort(), [rows])
   const resolved = useMemo(() => resolveSalesman(user, access, salesmen), [user, access, salesmen])
-  const me = viewAs || resolved?.name || ''
+  // Super admin (fms_users.is_admin) ko default me SAB salesmen ki parties; dropdown se ek salesman chun sakta hai.
+  // Baaki users: login se matched salesman ki parties hi.
+  const isAdmin = !!access?.is_admin
+  const ALL = '*'
+  const me = viewAs || (isAdmin ? ALL : resolved?.name || '')
+  const allView = me === ALL
 
   const enriched = useMemo(() => (rows || [])
-    .filter((p) => me && !p.permanent_note && (p.salesman === me || agOf(p).transferTo === me))
+    .filter((p) => me && !p.permanent_note && (allView || p.salesman === me || agOf(p).transferTo === me))
     .map((p) => { const ag = agOf(p); const bucket = bucketOf(p, ag); return { p, ag, bucket, pr: priorityOf(p, ag, bucket), broken: isBroken(ag) } })
     .sort((a, b) => (b.pr.rank - a.pr.rank) || (Number(b.p.total_pending) - Number(a.p.total_pending))),
   [rows, agg, me]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -197,22 +202,24 @@ export default function Salesman({ user, access }) {
   return (
     <div className="action-page coll-page">
       <div className="action-head">
-        <h2>🧑‍💼 My Parties {me && <span className="muted" style={{ fontWeight: 400, fontSize: 15 }}>— {me}</span>}</h2>
-        {me
-          ? <p className="muted small">Parties under <b>{me}</b>{resolved && !viewAs ? ` (${resolved.how})` : ''}, plus any transferred to you. Most important on top — call, then save the party's commitment.</p>
-          : <p className="muted small">Your login is not linked to a salesman name.</p>}
+        <h2>🧑‍💼 My Parties {me && <span className="muted" style={{ fontWeight: 400, fontSize: 15 }}>— {allView ? 'all salesmen' : me}</span>}</h2>
+        {allView
+          ? <p className="muted small">Super admin view — every salesman's parties. Pick a salesman below to see only theirs.</p>
+          : me
+            ? <p className="muted small">Parties under <b>{me}</b>{resolved && !viewAs ? ` (${resolved.how})` : ''}, plus any transferred to you. Most important on top — call, then save the party's commitment.</p>
+            : <p className="muted small">Your login is not linked to a salesman name.</p>}
 
-        {!resolved && !viewAs && (
+        {!isAdmin && !resolved && !viewAs && (
           <div className="panel" style={{ marginTop: 10 }}>
             <p className="small"><b>Login {user?.email} does not match any ERP salesman name.</b></p>
             <p className="muted small">Ask the admin to open <b>User Control</b> and set your "Salesman (My Parties)" mapping. ERP salesmen: {salesmen.join(' · ') || '—'}</p>
           </div>
         )}
-        {(access?.is_admin || !resolved) && salesmen.length > 0 && (
+        {(isAdmin || !resolved) && salesmen.length > 0 && (
           <div className="fld-row" style={{ marginTop: 8 }}>
-            <label className="small muted" style={{ flex: 'none' }}>{access?.is_admin ? 'Admin — view as salesman:' : 'Preview as:'}</label>
+            <label className="small muted" style={{ flex: 'none' }}>{isAdmin ? 'Salesman:' : 'Preview as:'}</label>
             <select value={viewAs} onChange={(e) => { setViewAs(e.target.value); setOpen(null) }} style={{ flex: 'none' }}>
-              <option value="">{resolved ? `me (${resolved.name})` : '— pick —'}</option>
+              <option value="">{isAdmin ? 'All salesmen' : resolved ? `me (${resolved.name})` : '— pick —'}</option>
               {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
@@ -242,7 +249,7 @@ export default function Salesman({ user, access }) {
           <table className="cfg-tbl coll-tbl sm-tbl">
             <thead>
               <tr>
-                <th>Priority</th><th>Party</th><th>Total Pending</th><th>Oldest Due</th><th>Aging</th><th title="Last receipt in ERP">Last Payment</th>
+                <th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}<th>Total Pending</th><th>Oldest Due</th><th>Aging</th><th title="Last receipt in ERP">Last Payment</th>
                 <th>Next F/Up</th><th>Last Stage</th><th title="Promised amount and date">Committed</th><th className="no-print">Action</th>
               </tr>
             </thead>
@@ -254,7 +261,8 @@ export default function Salesman({ user, access }) {
                 return (
                   <tr key={p.party_name} className="coll-row" onClick={() => setOpen(p.party_name)}>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
-                    <td><span className="coll-party"><b>{p.party_name}</b></span><div className="muted small">{[p.city, p.mobile].filter(Boolean).join(' · ')}{p.salesman !== me && ag.transferTo === me && <span className="xfer-tag">↪ transferred to you</span>}</div></td>
+                    <td><span className="coll-party"><b>{p.party_name}</b></span><div className="muted small">{[p.city, p.mobile].filter(Boolean).join(' · ')}{!allView && p.salesman !== me && ag.transferTo === me && <span className="xfer-tag">↪ transferred to you</span>}</div></td>
+                    {allView && <td className="small">{p.salesman || '—'}{ag.transferTo && <div className="xfer-tag" style={{ display: 'inline-block', marginLeft: 0 }}>↪ {ag.transferTo}</div>}</td>}
                     <td><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></td>
                     <td>{p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'}</td>
                     <td><AgingChips aging={p.aging} /></td>
@@ -270,8 +278,8 @@ export default function Salesman({ user, access }) {
                   </tr>
                 )
               })}
-              {!filtered.length && <tr><td colSpan={10} className="muted">{enriched.length ? 'No party matches this filter.' : `No pending parties under ${me}.`}</td></tr>}
-              {filtered.length > 200 && <tr><td colSpan={10} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
+              {!filtered.length && <tr><td colSpan={allView ? 11 : 10} className="muted">{enriched.length ? 'No party matches this filter.' : `No pending parties under ${me}.`}</td></tr>}
+              {filtered.length > 200 && <tr><td colSpan={allView ? 11 : 10} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
             </tbody>
           </table>
         </div>
