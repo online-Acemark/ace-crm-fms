@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { SCORE_DEFAULTS } from '../lib/coll'
 
 export default function StageConfig({ stages, scoring, onChanged }) {
   const [edit, setEdit] = useState({})
@@ -21,6 +22,24 @@ export default function StageConfig({ stages, scoring, onChanged }) {
     await supabase.from('fms_settings').upsert({ key: 'scoring', value: sc, updated_at: new Date().toISOString() })
     onChanged?.()
   }
+
+  // Collection follow-up scoring (Scoreboard ka "Collection Follow-up Score") — fms_settings key 'coll_scoring'
+  const [cs, setCs] = useState(SCORE_DEFAULTS)
+  const [csMsg, setCsMsg] = useState('')
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('demo')) return
+    supabase.from('fms_settings').select('value').eq('key', 'coll_scoring').maybeSingle()
+      .then(({ data }) => { if (data?.value) setCs({ ...SCORE_DEFAULTS, ...data.value }) })
+  }, [])
+  const saveCollScoring = async () => {
+    const v = { on_time_points: Number(cs.on_time_points) || 0, penalty_per_day: Number(cs.penalty_per_day) || 0, min_points: Number(cs.min_points) || 0 }
+    if (v.on_time_points <= 0) { setCsMsg('❌ On-time points must be more than 0'); return }
+    if (v.min_points > v.on_time_points) { setCsMsg('❌ Minimum points cannot exceed on-time points'); return }
+    const { error } = await supabase.from('fms_settings').upsert({ key: 'coll_scoring', value: v, updated_at: new Date().toISOString() })
+    setCsMsg(error ? '❌ ' + error.message : '✅ Saved — Scoreboard uses the new points from its next load')
+    setTimeout(() => setCsMsg(''), 5000)
+  }
+  const daysToZero = cs.penalty_per_day > 0 ? Math.ceil((cs.on_time_points - cs.min_points) / cs.penalty_per_day) : null
 
   const val = (s, f) => edit[s.id]?.[f] ?? s[f] ?? ''
   const set = (s, f, v) => setEdit((p) => ({ ...p, [s.id]: { ...(p[s.id] || {}), [f]: v } }))
@@ -60,6 +79,17 @@ export default function StageConfig({ stages, scoring, onChanged }) {
           <button className="btn primary" onClick={saveScoring}>Save Scoring</button>
         </div>
         <p className="muted small">Score = weighted average of stage points. Stage on time → full points; har delay hour par penalty. Payment weight sabse zyada (default 3) — kyunki collection sabse important.</p>
+      </div>
+      <div className="panel">
+        <h2>💰 Collection Follow-up Points</h2>
+        <div className="score-form">
+          <label>On-time points <input type="number" value={cs.on_time_points} onChange={(e) => setCs({ ...cs, on_time_points: Number(e.target.value) })} /></label>
+          <label>Penalty / day late <input type="number" value={cs.penalty_per_day} onChange={(e) => setCs({ ...cs, penalty_per_day: Number(e.target.value) })} /></label>
+          <label>Minimum points <input type="number" value={cs.min_points} onChange={(e) => setCs({ ...cs, min_points: Number(e.target.value) })} /></label>
+          <button className="btn primary" onClick={saveCollScoring}>Save Follow-up Points</button>
+          {csMsg && <span className="small"><b>{csMsg}</b></span>}
+        </div>
+        <p className="muted small">Follow-up on the planned day or earlier = {cs.on_time_points} points. Each day late −{cs.penalty_per_day}{daysToZero ? ` (reaches the minimum after ${daysToZero} days)` : ''}. Plan date passed with no call = missed = {cs.min_points}. Week = Monday–Saturday. Shown in Scoreboard → Collection Follow-up Score.</p>
       </div>
     </div>
   )
