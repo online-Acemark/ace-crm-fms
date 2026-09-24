@@ -68,7 +68,7 @@ isliye `next_followup_date` / `permanent_note` sync me preserve rehte hain (full
 hone par note bhi jaata hai). Sab derived values (follow-up count, last stage, broken promise,
 claimed-paid bills) app me `fms_followups` se compute hote hain — koi trigger nahi.
 Purani Google-Sheet history (`Payment_FollowUp_Res`) `fms_followups` me `mode='sheet'` ke saath one-time
-import hai (22 Sep 2026, 2,115 rows) — `created_at` = sheet ka original timestamp (IST), `created_by` =
+import hai (22 Sep 2026, 2,115 rows; 24 Sep ko 22–23 Sep ki 74 rows aur judi — duplicate check timestamp + party par) — `created_at` = sheet ka original timestamp (IST), `created_by` =
 sheet ka salesman, `next_followup_date` = sheet ka next date 11:00 IST. Dubara import karna ho to pehle
 `delete from fms_followups where mode='sheet'` chalao.
 

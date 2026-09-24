@@ -51,7 +51,7 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
   `fms_coll_cols`) + Print (current filter).
 - **Imported history** (`mode = 'sheet'`): the old Google-Form sheet (Payment_FollowUp_Res, 27 Jun –
-  22 Sep 2026, 2,115 rows / 265 parties) was loaded into `fms_followups` on 22 Sep 2026 — remark, bill
+  22 Sep 2026, 2,115 rows / 265 parties, +74 rows for 22–23 Sep added on 24 Sep) was loaded into `fms_followups` — remark, bill
   no, stage (Payment received / No response / Close / CRM Support), amount + mode, next date (plan) and
   the original timestamp + salesman as `created_by`. It shows in party History, Pulse and Scoreboard
   like any call entry; `fms_collection.next_followup_date` was back-filled from each party's latest
