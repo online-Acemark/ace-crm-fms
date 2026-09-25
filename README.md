@@ -60,7 +60,11 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - **Print**: 🖨 opens a print setup panel — tick columns (presets: Follow-up list / Aging report /
   Party master), then "Print now"; more than 7 columns prints landscape. Column choice is the same
   as the ⚙ Columns picker. Only the table prints (plus a one-line header with filters and totals);
-  title, KPIs, pulse, filters, chips and the "Start here" banner are hidden on paper.
+  title, KPIs, pulse, filters, chips and the "Start here" banner are hidden on paper. Every ticked
+  column fits the page: font size shrinks with the column count (fixed table layout, wrapping cells),
+  so nothing is cropped even with all 23 columns on.
+- Column config, cell renderers, extra filters, totals and print live in `src/lib/collCols.jsx`
+  (shared UI bits `ExtraFilters`, `ColPanel`, `TotalsRow` in `CollBits.jsx`).
 - **Imported history** (`mode = 'sheet'`): the old Google-Form sheet (Payment_FollowUp_Res, 27 Jun –
   22 Sep 2026, 2,115 rows / 265 parties, +74 rows for 22–23 Sep added on 24 Sep) was loaded into `fms_followups` — remark, bill
   no, stage (Payment received / No response / Close / CRM Support), amount + mode, next date (plan) and
@@ -72,6 +76,9 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - Shows only the logged-in salesman's parties (+ those transferred to them). Login -> ERP salesman
   name: admin sets it in User Control ("Salesman (My Parties)"), else auto-match by Google name /
   email first name (only when exactly one salesman matches). Admins get a "view as salesman" picker.
+- Same toolbar filters as Collection (Beat / Aging / Company / Difference), ⚙ Columns picker
+  (localStorage `fms_sales_cols`, default: pending, oldest due, aging chips, last payment, next,
+  stage, committed) and 🖨 Print setup with the same presets and totals row.
 - Row click expands: overdue bills (tick to link), ERP receipts, history, and the **commitment form**
   (promised amount + date + remark) -> `fms_followups` stage Committed; CRM's next follow-up date is
   pulled to the promised day if it was blank or later.

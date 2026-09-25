@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
-import { inr, inrShort, dmy, isoDay, normKey, userName, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
-import { AgingChips, StageChip, BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard } from './CollBits'
+import { inr, inrShort, dmy, isoDay, normKey, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { COLS, COL_PRESETS, SALES_DEFAULT_ON, useColVis, cellOf, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
+import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
 // My Parties (salesman tab): login wale salesman ki apni parties (+ jo usko transfer hui),
 // har party par commitment form (amount + date + remark). Data wahi (fms_collection / fms_followups / fms_receipts).
@@ -180,6 +181,9 @@ export default function Salesman({ user, access }) {
   const [chip, setChip] = useState('all')
   const [open, setOpen] = useState(null)
   const [viewAs, setViewAs] = useState('')   // admin: kisi bhi salesman ki nazar se dekho
+  const xf = useExtraFilters()               // beat / aging bucket / company / difference
+  const cols = useColVis('fms_sales_cols', SALES_DEFAULT_ON)
+  const [colPanel, setColPanel] = useState(false)   // false | 'cols' | 'print'
   const [toast, setToast] = useState('')
 
   useEffect(() => {
@@ -225,13 +229,21 @@ export default function Salesman({ user, access }) {
     }
   }, [enriched, rcpts])
 
+  const opts = useMemo(() => filterOptions(rows), [rows])
   const base = useMemo(() => {
     const s = q.trim().toLowerCase()
-    return s ? enriched.filter(({ p }) => `${p.party_name} ${p.mobile || ''} ${p.city || ''} ${p.salesman || ''}`.toLowerCase().includes(s)) : enriched
-  }, [enriched, q])
+    const list = s ? enriched.filter(({ p }) => `${p.party_name} ${p.mobile || ''} ${p.city || ''} ${p.salesman || ''}`.toLowerCase().includes(s)) : enriched
+    return applyExtraFilters(list, xf.f)
+  }, [enriched, q, xf.f])
   const counts = useMemo(() => Object.fromEntries(CHIPS.map((c) => [c.key, base.filter((e) => matchChip(e, c.key)).length])), [base])
   const filtered = useMemo(() => base.filter((e) => matchChip(e, chip)), [base, chip])
   const nextUp = useMemo(() => (chip === 'all' && !q ? filtered.find((e) => e.pr.rank >= 3) : null), [filtered, chip, q])
+  const { visCols } = cols
+  const totals = useTotals(filtered)
+  const printNow = () => { setColPanel(false); printTable(visCols.length) }
+  const clearAll = () => { setQ(''); xf.clear(); setChip('all') }
+  const anyFilter = q || xf.any || chip !== 'all'
+  const filterTxt = [allView ? 'all salesmen' : me, chip !== 'all' ? chip : '', ...extraFilterText(xf.f), q ? `"${q}"` : ''].filter(Boolean).join(' · ')
 
   const rowActions = (p) => {
     const wa = waLink(p.mobile, buildCollectionMsg(p))
@@ -256,6 +268,7 @@ export default function Salesman({ user, access }) {
                 ? <p className="muted small">Parties under <b>{me}</b>{resolved && !viewAs ? ` (${resolved.how})` : ''}, plus any transferred to you. Most important on top — call, then save the party's commitment.</p>
                 : <p className="muted small">Your login is not linked to a salesman name.</p>}
           </div>
+          <span className="coll-tools">
           {(isAdmin || !resolved) && salesmen.length > 0 && (
             <label className="small muted" style={{ whiteSpace: 'nowrap' }}>{isAdmin ? 'Salesman' : 'Preview as'}
               <select value={viewAs} onChange={(e) => { setViewAs(e.target.value); setOpen(null) }} style={{ marginLeft: 6 }}>
@@ -264,6 +277,9 @@ export default function Salesman({ user, access }) {
               </select>
             </label>
           )}
+            <button className={`btn ghost sm ${colPanel === 'cols' ? 'on' : ''}`} onClick={() => setColPanel((v) => (v === 'cols' ? false : 'cols'))} title="Show / hide table columns">⚙ Columns</button>
+            <button className={`btn ghost sm ${colPanel === 'print' ? 'on' : ''}`} onClick={() => setColPanel((v) => (v === 'print' ? false : 'print'))} title="Choose columns, then print this list with the current filters">🖨 Print</button>
+          </span>
         </div>
 
         {!isAdmin && !resolved && !viewAs && (
@@ -285,10 +301,12 @@ export default function Salesman({ user, access }) {
           </div>
           <div className="coll-toolbar">
             <input className="search" placeholder="🔍 Search party / mobile / city…" value={q} onChange={(e) => setQ(e.target.value)} />
-            {(q || chip !== 'all') && <button className="btn ghost sm" onClick={() => { setQ(''); setChip('all') }}>✕ Clear</button>}
+            <ExtraFilters opts={opts} f={xf.f} set={xf.set} onDiffYes={() => cols.showCol('diff')} />
+            {anyFilter && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
             <span className="filter-count active">🔎 {filtered.length} / {enriched.length}</span>
           </div>
           <div className="chip-rows"><div className="chip-row">{CHIPS.map((c) => <Chip key={c.key} label={c.label} n={counts[c.key]} tone={c.tone} active={chip === c.key} onClick={() => setChip(c.key)} />)}</div></div>
+          {colPanel && <ColPanel mode={colPanel} cols={cols} allCols={COLS} presets={COL_PRESETS} count={filtered.length} onPrint={printNow} />}
         </>)}
       </div>
 
@@ -306,35 +324,31 @@ export default function Salesman({ user, access }) {
         </div>
       ) : (
         <div className="panel coll-list">
+          <div className="print-only small muted">My Parties · {filtered.length} parties · {inrShort(totals.total_pending)} pending · {filterTxt} · printed {new Date().toLocaleString('en-IN')}</div>
           <table className="cfg-tbl coll-tbl sm-tbl">
             <thead>
               <tr>
-                <th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}<th className="num">Total Pending</th><th>Oldest Due</th><th>Aging</th><th title="Last receipt in ERP">Last Payment</th>
-                <th>Next F/Up</th><th>Last Stage</th><th title="Promised amount and date">Committed</th><th className="no-print">Action</th>
+                <th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}
+                {visCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''} title={c.title || ''}>{c.label}</th>)}
+                <th className="no-print">Action</th>
               </tr>
             </thead>
             <tbody>
               {filtered.slice(0, 200).map((e) => {
-                const { p, ag, pr, bucket, broken } = e
-                const r0 = ag.receipts[0]
+                const { p, ag, pr } = e
                 return (
                   <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''}`} onClick={() => setOpen(p.party_name)}>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} showSalesman={false} me={allView ? '' : me} /></td>
                     {allView && <td className="small">{p.salesman || '—'}</td>}
-                    <td className="num"><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></td>
-                    <td>{p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'}</td>
-                    <td><AgingChips aging={p.aging} /></td>
-                    <td className="small">{r0 ? <>{inrShort(r0.amount)}<div className="muted">{dmy(r0.pay_date)}</div></> : p.last_pay_amt ? <>{inrShort(p.last_pay_amt)}<div className="muted">{dmy(p.last_pay_date)}</div></> : <span className="muted">—</span>}</td>
-                    <td><BucketPill b={bucket} date={p.next_followup_date} /></td>
-                    <td>{ag.lastStage ? <StageChip s={ag.lastStage} /> : <span className="muted">—</span>}{ag.last && <div className="muted small">{dmy(ag.last.created_at)} · {userName(ag.last.created_by)}</div>}</td>
-                    <td>{ag.committed ? <span className={`small ${broken ? 'red-t' : ''}`}><b>{inrShort(ag.committed.amount)}</b><div className={broken ? 'red-t' : 'muted'}>{broken ? '💔 ' : 'by '}{dmy(ag.committed.date)}</div></span> : <span className="muted">—</span>}</td>
+                    {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e)}</td>)}
                     <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
                   </tr>
                 )
               })}
-              {filtered.length > 200 && <tr><td colSpan={allView ? 11 : 10} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
+              {filtered.length > 200 && <tr><td colSpan={(allView ? 4 : 3) + visCols.length} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
             </tbody>
+            <TotalsRow visCols={visCols} totals={totals} count={filtered.length} lead={allView ? 3 : 2} />
           </table>
         </div>
       ))}

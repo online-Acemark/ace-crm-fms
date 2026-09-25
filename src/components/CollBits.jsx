@@ -159,6 +159,66 @@ export const Skeleton = ({ rows = 6 }) => (
   <div className="skel-wrap">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skel" style={{ width: `${70 + ((i * 13) % 30)}%` }} />)}</div>
 )
 
+// Toolbar ke extra filters: Beat / Aging bucket / Company / Difference (Collection + My Parties dono me)
+export function ExtraFilters({ opts, f, set, onDiffYes }) {
+  return (<>
+    <select value={f.beat} onChange={(e) => set('beat', e.target.value)} title="Parties of this beat (ERP)">
+      <option value="">Beat: All</option>
+      {opts.beats.map((b) => <option key={b} value={b}>{b}</option>)}
+    </select>
+    <select value={f.agingF} onChange={(e) => set('agingF', e.target.value)} title="Only parties that have pending money in this age bucket">
+      <option value="">Aging: All</option>
+      {BUCKETS.map(([k, l]) => <option key={k} value={k}>{l} days</option>)}
+    </select>
+    <select value={f.company} onChange={(e) => set('company', e.target.value)} title="Parties with pending bills of this firm">
+      <option value="">Company: All</option>
+      {opts.companies.map((c) => <option key={c} value={c}>{c}</option>)}
+    </select>
+    <select value={f.diffF} onChange={(e) => { set('diffF', e.target.value); if (e.target.value === 'yes') onDiffYes?.() }} title="Difference = Total Pending − Aging Total. 'Has difference' = money missing from the ERP aging report">
+      <option value="">Difference: All</option>
+      <option value="yes">Has difference</option>
+      <option value="no">No difference</option>
+    </select>
+  </>)
+}
+
+// Columns picker / Print setup panel — mode 'cols' ya 'print'; cols = useColVis() ka result
+export function ColPanel({ mode, cols, allCols, presets, count, onPrint }) {
+  const { vis, visCols, toggleCol, resetCols, applyPreset } = cols
+  const isPrint = mode === 'print'
+  return (
+    <div className={`coll-colpanel ${isPrint ? 'is-print' : ''}`}>
+      {isPrint && (
+        <div className="colpanel-head">
+          <b>🖨 Print setup</b><span className="muted small">Tick the columns you want on paper — current filters apply ({count} parties). All ticked columns fit on the page.</span>
+          <span className="colpanel-presets">{Object.keys(presets).map((n) => <button key={n} className="btn ghost sm" onClick={() => applyPreset(n)}>{n}</button>)}</span>
+        </div>
+      )}
+      <div className="colpanel-cols">
+        {allCols.map((c) => <label key={c.key} className="small chk"><input type="checkbox" checked={vis(c)} onChange={() => toggleCol(c.key)} /> {c.label}</label>)}
+      </div>
+      <div className="colpanel-foot">
+        <button className="btn ghost sm" onClick={resetCols}>Reset</button>
+        {isPrint && <button className="btn primary sm" onClick={onPrint}>🖨 Print now · {visCols.length} columns{visCols.length > 7 ? ' (landscape)' : ''}</button>}
+      </div>
+    </div>
+  )
+}
+
+// Table footer: number columns ka jod — lead = pehle kitne fixed columns (Priority, Party[, Salesman])
+export function TotalsRow({ visCols, totals, count, lead = 2 }) {
+  if (!visCols.some((c) => c.total)) return null
+  return (
+    <tfoot>
+      <tr className="coll-totals">
+        <td colSpan={lead}>Total · {count} parties</td>
+        {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''} title={c.total ? inr(totals[c.key]) : ''}>{c.total ? (Math.abs(totals[c.key]) > 1 ? inrShort(totals[c.key]) : '—') : ''}</td>)}
+        <td className="no-print" />
+      </tr>
+    </tfoot>
+  )
+}
+
 // Party ke bills kin firms ke hain — chhote chips (Stationers · Publications)
 export function FirmChips({ p }) {
   const firms = firmsOf(p)
