@@ -792,6 +792,8 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 @media print {
   .topbar, .toast, .action-filter, .act-sec-tabs, .coll-filters, .coll-kpis, .coll-pulse, .coll-colpanel, .coll-help,
   .no-print, .sec-title .how, .legend, .demo-note { display: none !important; }
+  /* Collection print = sirf table (+ ek line header): title, KPI, pulse, filters, chips, "Start here" sab chhupao */
+  .coll-page .action-head, .coll-page .nextup, .coll-page .modal-back { display: none !important; }
   .print-only { display: block !important; margin: 0 0 6px; }
   .coll-tbl { min-width: 0 !important; width: 100%; font-size: 10.5px; }
   .coll-tbl td, .coll-tbl th { padding: 3px 5px; }

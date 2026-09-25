@@ -375,6 +375,7 @@ export default function Collection() {
   const [beat, setBeat] = useState('')
   const [agingF, setAgingF] = useState('')      // aging bucket key: sirf jin parties ka is bucket me paisa hai
   const [company, setCompany] = useState('')    // firm name: jin parties ke bills is firm ke hain
+  const [diffF, setDiffF] = useState('')        // '' | 'yes' (Total Pending ≠ Aging Total) | 'no' (barabar)
   const [preset, setPreset] = useState('all')
   const [sort, setSort] = useState(['priority', 'desc'])
   const [open, setOpen] = useState(null) // party_name jo modal me hai
@@ -466,8 +467,9 @@ export default function Collection() {
     if (beat) list = list.filter((e) => String(e.p.beat || '').trim() === beat)
     if (agingF) list = list.filter((e) => Number(e.p.aging?.[agingF] || 0) > 0)
     if (company) list = list.filter((e) => firmsOf(e.p).includes(company))
+    if (diffF) list = list.filter((e) => (Math.abs(agingDiff(e.p)) > 1) === (diffF === 'yes'))
     return list
-  }, [enriched, q, salesman, beat, agingF, company])
+  }, [enriched, q, salesman, beat, agingF, company, diffF])
   const counts = useMemo(() => {
     const live = base.filter((e) => !e.p.permanent_note)
     const c = {}
@@ -557,9 +559,9 @@ export default function Collection() {
   }
 
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('fms_coll_help_seen', '1') } catch { /* private mode */ } }
-  const clearAll = () => { setQ(''); setSalesman(''); setBeat(''); setAgingF(''); setCompany(''); setPreset('all') }
-  const anyFilter = q || salesman || beat || agingF || company || preset !== 'all'
-  const filterTxt = [preset !== 'all' ? preset : '', salesman, beat, agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, q ? `"${q}"` : ''].filter(Boolean).join(' · ')
+  const clearAll = () => { setQ(''); setSalesman(''); setBeat(''); setAgingF(''); setCompany(''); setDiffF(''); setPreset('all') }
+  const anyFilter = q || salesman || beat || agingF || company || diffF || preset !== 'all'
+  const filterTxt = [preset !== 'all' ? preset : '', salesman, beat, agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : '', q ? `"${q}"` : ''].filter(Boolean).join(' · ')
   const chip = (pr) => <Chip key={pr.key} label={pr.label} n={counts[pr.key]} tone={pr.tone} active={preset === pr.key} onClick={() => setPreset(pr.key)} />
   const setRange = (f, t) => { setFrom(f); setTo(t) }
   const rangeTxt = from || to ? `${from ? dmy(from) : 'start'} – ${to ? dmy(to) : 'today'}` : 'all time'
@@ -672,6 +674,11 @@ export default function Collection() {
           <select value={company} onChange={(e) => setCompany(e.target.value)} title="Parties with pending bills of this firm">
             <option value="">Company: All</option>
             {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={diffF} onChange={(e) => { setDiffF(e.target.value); if (e.target.value === 'yes' && !vis(COLS.find((c) => c.key === 'diff'))) toggleCol('diff') }} title="Difference = Total Pending − Aging Total. 'Has difference' = money missing from the ERP aging report">
+            <option value="">Difference: All</option>
+            <option value="yes">Has difference</option>
+            <option value="no">No difference</option>
           </select>
           {anyFilter && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
           <span className="filter-count active">🔎 {filtered.length} / {kpi.parties}</span>

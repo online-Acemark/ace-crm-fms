@@ -51,14 +51,16 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
   `fms_coll_cols`) + Print (current filter).
 - **Filters** (toolbar): search, Salesman, Beat, Aging bucket (parties with money in that bucket),
-  Company (parties with bills of that firm). Chip counts follow these filters.
+  Company (parties with bills of that firm), Difference (Has / No difference — picking "Has
+  difference" also switches the Difference column on). Chip counts follow these filters.
 - **Aging columns**: one column per ERP bucket (0-30 … 180+), Aging Total (sum of buckets) and
   Difference = Total Pending − Aging Total (money not in the ERP aging report — mostly internal /
   non-trade accounts). Company column shows the firms of the party's bills. Number columns get a
   totals row at the bottom for the parties in the current filter.
 - **Print**: 🖨 opens a print setup panel — tick columns (presets: Follow-up list / Aging report /
   Party master), then "Print now"; more than 7 columns prints landscape. Column choice is the same
-  as the ⚙ Columns picker.
+  as the ⚙ Columns picker. Only the table prints (plus a one-line header with filters and totals);
+  title, KPIs, pulse, filters, chips and the "Start here" banner are hidden on paper.
 - **Imported history** (`mode = 'sheet'`): the old Google-Form sheet (Payment_FollowUp_Res, 27 Jun –
   22 Sep 2026, 2,115 rows / 265 parties, +74 rows for 22–23 Sep added on 24 Sep) was loaded into `fms_followups` — remark, bill
   no, stage (Payment received / No response / Close / CRM Support), amount + mode, next date (plan) and
