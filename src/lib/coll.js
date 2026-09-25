@@ -6,6 +6,18 @@ export const BUCKETS = [
   ['b0_30', '0-30'], ['b31_60', '31-60'], ['b61_90', '61-90'], ['b91_120', '91-120'],
   ['b121_150', '121-150'], ['b151_180', '151-180'], ['b180p', '180+'],
 ]
+// saat buckets ka jod — ERP ki aging report me jitna paisa gina gaya
+export const agingSum = (p) => BUCKETS.reduce((a, [k]) => a + Number(p?.aging?.[k] || 0), 0)
+// Total Pending − aging sum: jo paisa aging report me nahi aaya (internal / non-trade accounts)
+export const agingDiff = (p) => Math.round(Number(p?.total_pending || 0) - agingSum(p))
+// party ke bills kin firms ke hain (Acemark Stationers / Publications / Ace Paper …) — distinct, sorted
+export const firmsOf = (p) => [...new Set((p?.bills || []).map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
+// chip ke liye chhota naam: 'Acemark Publications' -> 'Publications', 'Ace Paper Products' -> 'Ace Paper'
+export const firmShort = (name) => {
+  const n = String(name || '').trim()
+  if (/^acemark\s+/i.test(n)) return n.replace(/^acemark\s+/i, '')
+  return n.split(/\s+/).slice(0, 2).join(' ')
+}
 export const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })
 // bade amounts chhote me: 12.5L, 1.2Cr — naye banda ko ek nazar me samajh aaye
 export const inrShort = (v) => {

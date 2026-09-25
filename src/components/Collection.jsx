@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
-import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, userName, isUrgent, STAGES, STAGE_HINT, PAY_MODES, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
-import { AgingChips, LimitBar, StageChip, BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard } from './CollBits'
+import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, userName, isUrgent, STAGES, STAGE_HINT, PAY_MODES, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, BUCKETS, agingSum, agingDiff, firmsOf, useIsMobile } from '../lib/coll'
+import { AgingChips, LimitBar, StageChip, BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, FirmChips } from './CollBits'
 
 // Collection tab: poore ledger ka party-wise outstanding (fms_collection, har ghante ERP se sync)
 // + follow-up system (fms_followups): stage, bills, commitment, transfer, permanent note
@@ -334,10 +334,17 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, onSaved, onToast }) {
 }
 
 // ---------- table columns (⚙ Columns se show/hide, localStorage me yaad) ----------
+// aging column ka rang: pehle 2 buckets green, agle 2 amber, baaki red (AgingChips jaisa)
+const AGE_CLS = ['green-t', 'green-t', 'amber-t', 'amber-t', 'red-t', 'red-t', 'red-t']
+const AGING_COLS = BUCKETS.map(([k, label], i) => ({ key: 'ag_' + k, bkt: k, label: label + 'd', on: false, sort: 'ag_' + k, num: true, cls: AGE_CLS[i], title: `Pending amount ${label} days old (ERP aging report)`, total: (p) => Number(p.aging?.[k] || 0) }))
 const COLS = [
-  { key: 'total_pending', label: 'Total Pending', on: true, sort: 'total_pending', num: true },
+  { key: 'total_pending', label: 'Total Pending', on: true, sort: 'total_pending', num: true, total: (p) => Number(p.total_pending || 0) },
   { key: 'oldest_od', label: 'Oldest Due', on: true, sort: 'oldest_od', title: 'How many days the oldest bill is overdue' },
-  { key: 'aging', label: 'Aging', on: true, title: 'How old the money is — green is new, red is very old' },
+  { key: 'company', label: 'Company', on: true, title: 'Which firms the pending bills belong to' },
+  { key: 'aging', label: 'Aging (chips)', on: false, title: 'How old the money is — green is new, red is very old' },
+  ...AGING_COLS,
+  { key: 'aging_sum', label: 'Aging Total', on: false, sort: 'aging_sum', num: true, total: agingSum, title: 'Sum of all aging buckets' },
+  { key: 'diff', label: 'Difference', on: false, sort: 'diff', num: true, total: agingDiff, title: 'Total Pending − Aging Total: money that is not in the ERP aging report' },
   { key: 'credit_limit', label: 'Credit Limit', on: true, title: 'Credit limit given to the party and how much is used' },
   { key: 'last_pay', label: 'Last Payment', on: true, title: 'Last receipt in ERP' },
   { key: 'next', label: 'Next F/Up', on: true, sort: 'next' },
@@ -349,6 +356,12 @@ const COLS = [
   { key: 'city', label: 'City', on: false }, { key: 'beat', label: 'Beat', on: false },
 ]
 const COLS_LS = 'fms_coll_cols'
+// Print panel ke quick presets: kaunse columns on rakhne hain
+const COL_PRESETS = {
+  'Follow-up list': ['total_pending', 'oldest_od', 'company', 'next', 'flw', 'stage', 'committed', 'remark'],
+  'Aging report': ['total_pending', 'company', ...AGING_COLS.map((c) => c.key), 'aging_sum', 'diff'],
+  'Party master': ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'city', 'beat'],
+}
 const loadCols = () => { try { const v = JSON.parse(localStorage.getItem(COLS_LS) || 'null'); if (v && typeof v === 'object') return v } catch { /* ignore */ } return {} }
 
 export default function Collection() {
@@ -359,13 +372,16 @@ export default function Collection() {
   const [rcpts, setRcpts] = useState([])
   const [q, setQ] = useState('')
   const [salesman, setSalesman] = useState('')
+  const [beat, setBeat] = useState('')
+  const [agingF, setAgingF] = useState('')      // aging bucket key: sirf jin parties ka is bucket me paisa hai
+  const [company, setCompany] = useState('')    // firm name: jin parties ke bills is firm ke hain
   const [preset, setPreset] = useState('all')
   const [sort, setSort] = useState(['priority', 'desc'])
   const [open, setOpen] = useState(null) // party_name jo modal me hai
   const [tick, setTick] = useState(0)
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem('fms_coll_help_seen'))
   const [colVis, setColVis] = useState(loadCols)
-  const [colPanel, setColPanel] = useState(false)
+  const [colPanel, setColPanel] = useState(false)   // false | 'cols' | 'print'
   const [toast, setToast] = useState('')
   const [pulseOpen, setPulseOpen] = useState(() => localStorage.getItem('fms_coll_pulse') !== '0')
   // Pulse date range — default: is mahine
@@ -395,6 +411,9 @@ export default function Collection() {
     agg.forEach((a) => { if (a.transferTo) s.add(a.transferTo) })
     return [...s].sort()
   }, [rows, agg])
+
+  const beats = useMemo(() => [...new Set((rows || []).map((p) => String(p.beat || '').trim()).filter(Boolean))].sort(), [rows])
+  const companies = useMemo(() => [...new Set((rows || []).flatMap((p) => firmsOf(p)))].sort(), [rows])
 
   // Pulse: chuni range me ERP receipts (asli paisa) + logged follow-ups, kisne kitne kiye
   const inRange = (iso) => { const d = String(iso || '').slice(0, 10); return (!from || d >= from) && (!to || d <= to) }
@@ -444,8 +463,11 @@ export default function Collection() {
     if (s) list = list.filter(({ p }) => `${p.party_name} ${p.mobile || ''} ${p.city || ''} ${p.salesman || ''}`.toLowerCase().includes(s))
     // salesman filter: apni parties + jo transfer hoke aayi
     if (salesman) list = list.filter((e) => e.p.salesman === salesman || e.ag.transferTo === salesman)
+    if (beat) list = list.filter((e) => String(e.p.beat || '').trim() === beat)
+    if (agingF) list = list.filter((e) => Number(e.p.aging?.[agingF] || 0) > 0)
+    if (company) list = list.filter((e) => firmsOf(e.p).includes(company))
     return list
-  }, [enriched, q, salesman])
+  }, [enriched, q, salesman, beat, agingF, company])
   const counts = useMemo(() => {
     const live = base.filter((e) => !e.p.permanent_note)
     const c = {}
@@ -462,6 +484,9 @@ export default function Collection() {
       : k === 'flw' ? e.ag.count
       : k === 'next' ? (e.p.next_followup_date ? new Date(e.p.next_followup_date).getTime() : (dir === 'desc' ? -1 : 9e15))
       : k === 'committed' ? (e.ag.committed?.amount || 0)
+      : k === 'aging_sum' ? agingSum(e.p)
+      : k === 'diff' ? agingDiff(e.p)
+      : k.startsWith('ag_') ? Number(e.p.aging?.[k.slice(3)] || 0)
       : Number(e.p[k] || 0)
     return [...list].sort((a, b) => {
       if (k === 'priority') {
@@ -485,12 +510,27 @@ export default function Collection() {
   const visCols = COLS.filter(vis)
   const toggleCol = (k) => setColVis((v) => { const n = { ...v, [k]: !vis(COLS.find((c) => c.key === k)) }; try { localStorage.setItem(COLS_LS, JSON.stringify(n)) } catch { /* ignore */ } return n })
   const resetCols = () => { setColVis({}); try { localStorage.removeItem(COLS_LS) } catch { /* ignore */ } }
+  const applyPreset = (name) => { const on = new Set(COL_PRESETS[name]); const n = {}; COLS.forEach((c) => { n[c.key] = on.has(c.key) }); setColVis(n); try { localStorage.setItem(COLS_LS, JSON.stringify(n)) } catch { /* ignore */ } }
+  // footer totals: jo parties filter me dikh rahi hain, unka column-wise jod (sirf number columns)
+  const totals = useMemo(() => { const t = {}; for (const c of COLS) if (c.total) t[c.key] = filtered.reduce((a, e) => a + c.total(e.p), 0); return t }, [filtered])
+  const hasTotals = visCols.some((c) => c.total)
+  // Print: bahut columns ho to landscape — sirf is print ke liye @page rule lagao, baad me hata do
+  const printNow = () => {
+    const st = document.createElement('style'); st.textContent = `@page { size: A4 ${visCols.length > 7 ? 'landscape' : 'portrait'}; margin: 8mm; }`
+    document.head.appendChild(st)
+    const done = () => { st.remove(); window.removeEventListener('afterprint', done) }
+    window.addEventListener('afterprint', done); setTimeout(done, 60000)
+    setColPanel(false); setTimeout(() => window.print(), 50)
+  }
 
   const cell = (c, { p, ag, bucket, broken }) => {
     switch (c.key) {
       case 'total_pending': return <><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></>
       case 'oldest_od': return p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'
       case 'aging': return <AgingChips aging={p.aging} />
+      case 'company': return <FirmChips p={p} />
+      case 'aging_sum': { const v = agingSum(p); return v ? <b>{inrShort(v)}</b> : <span className="muted">—</span> }
+      case 'diff': { const v = agingDiff(p); return Math.abs(v) > 1 ? <b className="amber-t" title={`${inr(p.total_pending)} pending − ${inr(agingSum(p))} in aging`}>{inrShort(v)}</b> : <span className="muted">—</span> }
       case 'credit_limit': return <LimitBar pending={p.total_pending} limit={p.credit_limit} />
       case 'last_pay': {
         const r = ag.receipts[0]
@@ -509,12 +549,17 @@ export default function Collection() {
       case 'transfer': return ag.transferTo ? <span className="small" title={ag.transferReason}>↪ {ag.transferTo}</span> : <span className="muted">—</span>
       case 'city': return p.city || <span className="muted">—</span>
       case 'beat': return p.beat || <span className="muted">—</span>
-      default: return null
+      default: {
+        if (c.bkt) { const v = Number(p.aging?.[c.bkt] || 0); return v ? <span className={c.cls} title={inr(v)}>{inrShort(v)}</span> : <span className="muted">—</span> }
+        return null
+      }
     }
   }
 
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('fms_coll_help_seen', '1') } catch { /* private mode */ } }
-  const clearAll = () => { setQ(''); setSalesman(''); setPreset('all') }
+  const clearAll = () => { setQ(''); setSalesman(''); setBeat(''); setAgingF(''); setCompany(''); setPreset('all') }
+  const anyFilter = q || salesman || beat || agingF || company || preset !== 'all'
+  const filterTxt = [preset !== 'all' ? preset : '', salesman, beat, agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, q ? `"${q}"` : ''].filter(Boolean).join(' · ')
   const chip = (pr) => <Chip key={pr.key} label={pr.label} n={counts[pr.key]} tone={pr.tone} active={preset === pr.key} onClick={() => setPreset(pr.key)} />
   const setRange = (f, t) => { setFrom(f); setTo(t) }
   const rangeTxt = from || to ? `${from ? dmy(from) : 'start'} – ${to ? dmy(to) : 'today'}` : 'all time'
@@ -541,8 +586,8 @@ export default function Collection() {
           </div>
           <span className="coll-tools">
             <button className={`btn ghost sm ${pulseOpen ? 'on' : ''}`} onClick={togglePulse} title="Show / hide the date-range pulse">📊 Pulse</button>
-            <button className="btn ghost sm" onClick={() => setColPanel((v) => !v)} title="Show / hide table columns">⚙ Columns</button>
-            <button className="btn ghost sm" onClick={() => window.print()} title="Print this list with the current filters">🖨 Print</button>
+            <button className={`btn ghost sm ${colPanel === 'cols' ? 'on' : ''}`} onClick={() => setColPanel((v) => (v === 'cols' ? false : 'cols'))} title="Show / hide table columns">⚙ Columns</button>
+            <button className={`btn ghost sm ${colPanel === 'print' ? 'on' : ''}`} onClick={() => setColPanel((v) => (v === 'print' ? false : 'print'))} title="Choose columns, then print this list with the current filters">🖨 Print</button>
           </span>
         </div>
 
@@ -616,7 +661,19 @@ export default function Collection() {
             <option value="">Salesman: All</option>
             {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          {(q || salesman || preset !== 'all') && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
+          <select value={beat} onChange={(e) => setBeat(e.target.value)} title="Parties of this beat (ERP)">
+            <option value="">Beat: All</option>
+            {beats.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <select value={agingF} onChange={(e) => setAgingF(e.target.value)} title="Only parties that have pending money in this age bucket">
+            <option value="">Aging: All</option>
+            {BUCKETS.map(([k, l]) => <option key={k} value={k}>{l} days</option>)}
+          </select>
+          <select value={company} onChange={(e) => setCompany(e.target.value)} title="Parties with pending bills of this firm">
+            <option value="">Company: All</option>
+            {companies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {anyFilter && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
           <span className="filter-count active">🔎 {filtered.length} / {kpi.parties}</span>
         </div>
         <div className="chip-rows">
@@ -624,9 +681,20 @@ export default function Collection() {
           <div className="chip-row"><span className="preset-lbl">Situation</span>{SITUATION_PRESETS.map((pr) => pr.key === 'excluded' && !kpi.excluded ? null : chip(pr))}</div>
         </div>
         {colPanel && (
-          <div className="coll-colpanel">
-            {COLS.map((c) => <label key={c.key} className="small chk"><input type="checkbox" checked={vis(c)} onChange={() => toggleCol(c.key)} /> {c.label}</label>)}
-            <button className="btn ghost sm" onClick={resetCols}>Reset</button>
+          <div className={`coll-colpanel ${colPanel === 'print' ? 'is-print' : ''}`}>
+            {colPanel === 'print' && (
+              <div className="colpanel-head">
+                <b>🖨 Print setup</b><span className="muted small">Tick the columns you want on paper — current filters apply ({filtered.length} parties).</span>
+                <span className="colpanel-presets">{Object.keys(COL_PRESETS).map((n) => <button key={n} className="btn ghost sm" onClick={() => applyPreset(n)}>{n}</button>)}</span>
+              </div>
+            )}
+            <div className="colpanel-cols">
+              {COLS.map((c) => <label key={c.key} className="small chk"><input type="checkbox" checked={vis(c)} onChange={() => toggleCol(c.key)} /> {c.label}</label>)}
+            </div>
+            <div className="colpanel-foot">
+              <button className="btn ghost sm" onClick={resetCols}>Reset</button>
+              {colPanel === 'print' && <button className="btn primary sm" onClick={printNow}>🖨 Print now · {visCols.length} columns{visCols.length > 7 ? ' (landscape)' : ''}</button>}
+            </div>
           </div>
         )}
       </div>
@@ -650,7 +718,7 @@ export default function Collection() {
         </div>
       ) : (
         <div className="panel coll-list">
-          <div className="print-only small muted">Collection list · {filtered.length} parties · filter: {preset}{salesman ? ' · ' + salesman : ''}{q ? ' · "' + q + '"' : ''} · printed {new Date().toLocaleString('en-IN')}</div>
+          <div className="print-only small muted">Collection list · {filtered.length} parties · {inrShort(totals.total_pending)} pending · filter: {filterTxt || 'all'} · printed {new Date().toLocaleString('en-IN')}</div>
           <table className="cfg-tbl coll-tbl">
             <thead>
               <tr>
@@ -674,6 +742,15 @@ export default function Collection() {
               })}
               {filtered.length > 200 && <tr><td colSpan={3 + visCols.length} className="muted small">…and {filtered.length - 200} more parties — use the search box above</td></tr>}
             </tbody>
+            {hasTotals && (
+              <tfoot>
+                <tr className="coll-totals">
+                  <td colSpan={2}>Total · {filtered.length} parties</td>
+                  {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''} title={c.total ? inr(totals[c.key]) : ''}>{c.total ? (Math.abs(totals[c.key]) > 1 ? inrShort(totals[c.key]) : '—') : ''}</td>)}
+                  <td className="no-print" />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}

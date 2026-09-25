@@ -1,6 +1,6 @@
 // Collection / My Parties shared UI bits: aging chips, limit bar, stage/bucket pills, timeline, ERP receipts.
 import { useState } from 'react'
-import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, inrShort, dmy, dmyt, userName, avaColor, initials } from '../lib/coll'
+import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, inrShort, dmy, dmyt, userName, avaColor, initials, firmsOf, firmShort } from '../lib/coll'
 
 export function AgingChips({ aging }) {
   const a = aging || {}
@@ -159,6 +159,13 @@ export const Skeleton = ({ rows = 6 }) => (
   <div className="skel-wrap">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skel" style={{ width: `${70 + ((i * 13) % 30)}%` }} />)}</div>
 )
 
+// Party ke bills kin firms ke hain — chhote chips (Stationers · Publications)
+export function FirmChips({ p }) {
+  const firms = firmsOf(p)
+  if (!firms.length) return <span className="muted small">—</span>
+  return <div className="firm-chips">{firms.map((f) => <span key={f} className="firm-chip" title={f}>{firmShort(f)}</span>)}</div>
+}
+
 // Mobile card (phone par table ki jagah)
 export function PartyCard({ e, me, showSalesman, onOpen, actions }) {
   const { p, ag, pr, bucket, broken } = e
@@ -175,6 +182,7 @@ export function PartyCard({ e, me, showSalesman, onOpen, actions }) {
         <div><span className="muted small">Promise</span>{ag.committed ? <b className={broken ? 'red-t' : ''}>{inrShort(ag.committed.amount)}<span className="muted small"> {broken ? '💔' : 'by'} {dmy(ag.committed.date)}</span></b> : <b className="muted">—</b>}</div>
       </div>
       <AgingChips aging={p.aging} />
+      <FirmChips p={p} />
       {(ag.lastStage || ag.last) && <div className="pcard-last">{ag.lastStage && <StageChip s={ag.lastStage} />}{ag.last && <span className="muted small">{dmy(ag.last.created_at)} · {userName(ag.last.created_by)}{ag.last.remarks ? ' — ' + ag.last.remarks : ''}</span>}</div>}
       <div className="pcard-act" onClick={(ev) => ev.stopPropagation()}>{actions}</div>
     </div>
