@@ -44,7 +44,9 @@ export function Timeline({ entries, waCount }) {
             <div className="tl-top">
               <b>{dmyt(f.created_at)}</b>
               <StageChip s={f.stage} />
-              {Number(f.amount_received) > 0 && <span className="stage-chip st-recv">{inr(f.amount_received)} received{f.payment_mode ? ' · ' + f.payment_mode : ''}</span>}
+              {f.customer_says && <span className="stage-chip st-says">🗣 {f.customer_says}</span>}
+              {f.support_type && <span className="stage-chip st-park">🛟 {f.support_type}</span>}
+              {Number(f.amount_received) > 0 && <span className="stage-chip st-recv">{inr(f.amount_received)} received{f.payment_mode ? ' · ' + f.payment_mode : ''}{f.received_by ? ' · by ' + (f.received_by === 'Salesman' && f.received_salesman ? f.received_salesman : f.received_by) : ''}</span>}
               {f.committed_date && <span className="stage-chip st-commit">Promised {inr(f.committed_amount)} by {dmy(f.committed_date)}</span>}
               {f.transfer_to && <span className="stage-chip st-park">↪ to {f.transfer_to}{f.transfer_reason ? ' — ' + f.transfer_reason : ''}</span>}
               {f.created_by && <span className="muted small">— {userName(f.created_by)}</span>}
@@ -99,6 +101,7 @@ export function PartyCell({ p, ag, showSalesman = true, me = '' }) {
         <div className="pcell-m">
           {meta}{meta && p.mobile ? ' · ' : ''}{p.mobile && <a href={`tel:${p.mobile}`} onClick={(e) => e.stopPropagation()}>{p.mobile}</a>}
           {p.has_pdc && <span className="tag tag-pdc">🧾 PDC</span>}
+          {p.permanent_note && <span className="tag tag-stop" title={'No follow-up: ' + p.permanent_note}>🚫 No follow-up</span>}
           {ag?.transferTo && <span className="tag tag-xfer" title={'Transferred: ' + (ag.transferReason || '')}>↪ {me && ag.transferTo === me ? 'to you' : ag.transferTo}</span>}
         </div>
       </div>

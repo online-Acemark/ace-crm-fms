@@ -67,6 +67,10 @@ note_updated_by, note_updated_at`. `fms-collection-sync` ka upsert sirf apne col
 isliye `next_followup_date` / `permanent_note` sync me preserve rehte hain (fully-paid party delete
 hone par note bhi jaata hai). Sab derived values (follow-up count, last stage, broken promise,
 claimed-paid bills) app me `fms_followups` se compute hote hain — koi trigger nahi.
+Migration `followup_form_conditional_fields`: `fms_followups.customer_says, received_by, received_salesman,
+support_type` + `fms_settings.coll_form` (form dropdown options); sheet rows ka `customer_says` /
+`received_by` remark se backfill kiya.
+
 Purani Google-Sheet history (`Payment_FollowUp_Res`) `fms_followups` me `mode='sheet'` ke saath one-time
 import hai (22 Sep 2026, 2,115 rows; 24 Sep ko 22–23 Sep ki 74 rows aur judi — duplicate check timestamp + party par) — `created_at` = sheet ka original timestamp (IST), `created_by` =
 sheet ka salesman, `next_followup_date` = sheet ka next date 11:00 IST. Dubara import karna ho to pehle

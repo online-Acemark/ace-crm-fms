@@ -40,13 +40,16 @@ export const userName = (e) => String(e || '').split('@')[0]
 export const isCross = (p) => Number(p.credit_limit) > 0 && Number(p.total_pending) > Number(p.credit_limit)
 export const isUrgent = (p) => (p.oldest_od || 0) > 180 || isCross(p)
 
-// ---------- follow-up stages (form dropdown) ----------
-export const STAGES = ['Committed', 'Payment received', 'PDC received', 'Dispute', 'No response', 'CRM Support', 'Transfer', 'Close']
+// ---------- follow-up stages ----------
+// Form me ye 6 (Google-Form jaise sections). Purane stages (PDC received / Dispute / No response) history me dikhte rehte hain.
+export const FORM_STAGES = ['Follow-up', 'Payment received', 'Committed', 'CRM Support', 'Transfer', 'Close']
+export const STAGES = ['Follow-up', 'Committed', 'Payment received', 'PDC received', 'Dispute', 'No response', 'CRM Support', 'Transfer', 'Close']
 export const STAGE_CLS = {
-  'Committed': 'st-commit', 'Payment received': 'st-recv', 'PDC received': 'st-recv', 'Dispute': 'st-bad',
+  'Follow-up': 'st-flw', 'Committed': 'st-commit', 'Payment received': 'st-recv', 'PDC received': 'st-recv', 'Dispute': 'st-bad',
   'No response': 'st-bad', 'CRM Support': 'st-park', 'Transfer': 'st-park', 'Close': 'st-close',
 }
 export const STAGE_HINT = {
+  'Follow-up': 'Normal call — pick what the customer said, write the remark, set the next date',
   'Committed': 'Party promised to pay — enter the amount and the date they promised',
   'Payment received': 'Party says money is sent — enter amount + mode. ERP sync (hourly) confirms it against the bills',
   'PDC received': 'Post-dated cheque received — enter amount, mode = Cheque/PDC',
@@ -56,7 +59,24 @@ export const STAGE_HINT = {
   'Transfer': 'Hand this party to another salesman — pick the name and give the reason',
   'Close': 'Nothing more to chase (fully paid / written off) — party leaves Today & Tomorrow lists',
 }
-export const PAY_MODES = ['RTGS/NEFT', 'UPI', 'Cash', 'Cheque', 'PDC', 'Other']
+export const PAY_MODES = ['Online', 'UPI', 'Cash', 'Cheque', 'PDC', 'Other']
+export const RECEIVED_BY = ['CRM', 'Salesman']
+// "Customer says" jin par stage 'No response' save hota hai (phone hi nahi utha)
+export const NO_RESPONSE_SAYS = ['CALL NOT REC.', 'NETWORK ISSUE']
+// form dropdown options — fms_settings key 'coll_form' (Stage Plan tab se editable); ye defaults
+export const FORM_DEFAULTS = {
+  customer_says: ['CALL NOT REC.', 'CALL BACK', 'NETWORK ISSUE', 'Need to talk Dilip sir', 'Not Discussed In Meeting'],
+  support_types: ['Bad language', 'Not picking', 'Case'],
+}
+export function useFormOpts() {
+  const [opts, setOpts] = useState(FORM_DEFAULTS)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('demo')) return
+    supabase.from('fms_settings').select('value').eq('key', 'coll_form').maybeSingle()
+      .then(({ data }) => { if (data?.value) setOpts({ ...FORM_DEFAULTS, ...data.value }) })
+  }, [])
+  return opts
+}
 
 // ---------- follow-up status buckets (from next_followup_date + latest stage) ----------
 export const BUCKET_LABEL = { missed: 'Missed', today: 'Today', tomorrow: 'Tomorrow', week: 'This week', later: 'Later', nodate: 'No date', closed: 'Closed' }
@@ -134,7 +154,7 @@ export async function fetchAll(table, cols, apply) {
   }
   return out
 }
-export const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at,next_followup_date'
+export const FUP_COLS = 'id,party_name,stage,payment_mode,bill_nos,committed_amount,committed_date,transfer_to,transfer_reason,remarks,amount_received,mode,created_by,created_at,next_followup_date,customer_says,received_by,received_salesman,support_type'
 export const RCPT_COLS = 'company_id,pay_vno,party_name,pay_date,pay_type,amount,bills'
 
 

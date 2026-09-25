@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
-import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, userName, isUrgent, STAGES, STAGE_HINT, PAY_MODES, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, COLL_DEFAULT_ON, useColVis, cellOf, sortVal, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -39,63 +39,95 @@ function matchPreset(e, key, recvSet) {
 }
 
 // ---------- Follow-up form (chhota modal): bill-wise ya party-level ----------
+// Google-Form jaise sections: stage chuno -> sirf uske fields dikhte hain.
 // bills = [{ vno, pending }] jin par ye note hai (khali = poora account)
-function FollowupForm({ p, bills, salesmen, demo, onClose, onSaved }) {
+function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) {
   const [stage, setStage] = useState('')
+  const [says, setSays] = useState('')          // Follow-up: customer kya bola (dropdown)
   const [remark, setRemark] = useState('')
   const [amount, setAmount] = useState('')
   const [payMode, setPayMode] = useState('')
+  const [recvBy, setRecvBy] = useState('CRM')   // Payment received: CRM | Salesman
+  const [recvSm, setRecvSm] = useState(p.salesman || '')
+  const [support, setSupport] = useState('')    // CRM Support type
   const [cAmt, setCAmt] = useState('')
   const [cDate, setCDate] = useState('')
   const [tTo, setTTo] = useState('')
   const [tReason, setTReason] = useState('')
   const [nextDate, setNextDate] = useState(() => toLocalInput(suggestNextFollowup()))
+  const [stop, setStop] = useState(!!p.permanent_note)       // permanent note: is party ka follow-up nahi karna
+  const [stopNote, setStopNote] = useState(p.permanent_note || '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const billSum = bills.reduce((a, b) => a + Number(b.pending || 0), 0)
   const scope = bills.length === 0 ? 'whole account' : bills.length === 1 ? `bill ${bills[0].vno} · ${inr(bills[0].pending)} pending` : `${bills.length} bills · ${inr(billSum)} pending`
+  const saysOpts = [...(formOpts.customer_says || []), ...salesmen.map((sm) => `${sm} - Visit`)]
 
   useEffect(() => { const k = (e) => e.key === 'Escape' && onClose(); document.addEventListener('keydown', k); return () => document.removeEventListener('keydown', k) }, [onClose])
 
-  // Committed: date default = next follow-up date; amount default = in bills ka pending
-  const pickStage = (s) => {
-    setStage(s)
-    if (s === 'Committed') { if (!cDate && nextDate) setCDate(nextDate.slice(0, 10)); if (!cAmt && billSum) setCAmt(String(Math.round(billSum))) }
-    if (s === 'Payment received' && !amount && billSum) setAmount(String(Math.round(billSum)))
+  const pickStage = (st) => {
+    setStage(st); setErr('')
+    if (st === 'Committed') { if (!cDate && nextDate) setCDate(nextDate.slice(0, 10)); if (!cAmt && billSum) setCAmt(String(Math.round(billSum))) }
+    if (st === 'Payment received' && !amount && billSum) setAmount(String(Math.round(billSum)))
   }
   const quickNext = (days) => { const d = suggestNextFollowup(days); setNextDate(toLocalInput(d)) }
+  const needNext = stage && stage !== 'Close' && !stop
+  const remarkPh = stage === 'Follow-up' ? (says === 'Other' ? 'Write what the customer said' : 'Remark (optional)')
+    : stage === 'Payment received' ? 'Remark, e.g. "RTGS ref 1234" (optional)'
+    : stage === 'CRM Support' ? 'What exactly happened / what the office should do'
+    : stage === 'Close' ? 'Why closed, e.g. "fully paid" / "written off"'
+    : 'Remark'
 
   const save = async () => {
     if (!stage) { setErr('Pick a Stage first — what happened on this call?'); return }
-    if (!remark.trim()) { setErr('Write what was discussed'); return }
-    if (stage === 'Committed' && !(Number(cAmt) > 0 && cDate)) { setErr('Committed stage needs the promised amount and date'); return }
+    if (stage === 'Follow-up' && !says) { setErr('Pick what the customer said'); return }
+    if (stage === 'Follow-up' && says === 'Other' && !remark.trim()) { setErr('Other — write what the customer said'); return }
     if (stage === 'Payment received' && !(Number(amount) > 0)) { setErr('Payment received — enter the amount'); return }
-    if (Number(amount) > 0 && !payMode) { setErr('Pick the payment mode for the amount received'); return }
+    if (stage === 'Payment received' && !payMode) { setErr('Pick the payment mode'); return }
+    if (stage === 'Payment received' && recvBy === 'Salesman' && !recvSm.trim()) { setErr('Pick which salesman received the payment'); return }
+    if (stage === 'Committed' && !(Number(cAmt) > 0 && cDate)) { setErr('Committed stage needs the promised amount and date'); return }
+    if (stage === 'CRM Support' && !support) { setErr('Pick the CRM Support type'); return }
+    if (stage === 'CRM Support' && !remark.trim()) { setErr('CRM Support — write the remark for the office'); return }
     if (stage === 'Transfer' && !tTo.trim()) { setErr('Transfer — pick the salesman to hand over to'); return }
-    if (stage !== 'Close' && !nextDate) { setErr('Set the next follow-up date'); return }
+    if (stage === 'Close' && !remark.trim()) { setErr('Close — write why'); return }
+    if (needNext && !nextDate) { setErr('Set the next follow-up date'); return }
+    if (stop && !stopNote.trim()) { setErr('Permanent note — write why this party should not be followed up'); return }
     if (demo) { setErr('Demo mode cannot save — use the real login'); return }
     setSaving(true); setErr('')
     const { data: { user } } = await supabase.auth.getUser()
+    const isPay = stage === 'Payment received'
+    // 'CALL NOT REC.' / 'NETWORK ISSUE' -> stage 'No response' (sheet history jaisa), baaki Follow-up
+    const saveStage = stage === 'Follow-up' && NO_RESPONSE_SAYS.includes(says) ? 'No response' : stage
+    const autoRemark = stage === 'Follow-up' ? says : isPay ? `Payment by ${recvBy === 'Salesman' ? recvSm.trim() : 'CRM'}` : stage === 'CRM Support' ? support : stage
+    const nextIso = stage === 'Close' || stop ? null : new Date(nextDate).toISOString()
     const { error: e1 } = await supabase.from('fms_followups').insert({
-      party_name: p.party_name, remarks: remark.trim(), mode: 'call', stage,
-      amount_received: Number(amount) > 0 ? Number(amount) : null,
-      payment_mode: Number(amount) > 0 ? payMode : null,
+      party_name: p.party_name, remarks: remark.trim() || autoRemark, mode: 'call', stage: saveStage,
+      customer_says: stage === 'Follow-up' ? (says === 'Other' ? null : says) : null,
+      amount_received: isPay ? Number(amount) : null,
+      payment_mode: isPay ? payMode : null,
+      received_by: isPay ? recvBy : null,
+      received_salesman: isPay && recvBy === 'Salesman' ? recvSm.trim() : null,
+      support_type: stage === 'CRM Support' ? support : null,
       bill_nos: bills.map((b) => b.vno),
       committed_amount: stage === 'Committed' ? Number(cAmt) : null,
       committed_date: stage === 'Committed' ? cDate : null,
       transfer_to: stage === 'Transfer' ? tTo.trim() : null,
       transfer_reason: stage === 'Transfer' ? tReason.trim() || null : null,
       followup_date: isoDay(),
-      next_followup_date: stage === 'Close' ? null : new Date(nextDate).toISOString(),   // PLAN (scoring)
+      next_followup_date: nextIso,   // PLAN (scoring)
       created_by: user?.email || '',
     })
-    const { error: e2 } = await supabase.from('fms_collection')
-      .update({ next_followup_date: stage === 'Close' ? null : new Date(nextDate).toISOString() }).eq('party_name', p.party_name)
+    const upd = { next_followup_date: nextIso }
+    // permanent note: tick kiya -> set; pehle tha aur ab un-tick -> hata do
+    if (stop) Object.assign(upd, { permanent_note: stopNote.trim(), note_updated_by: user?.email || '', note_updated_at: new Date().toISOString() })
+    else if (p.permanent_note) Object.assign(upd, { permanent_note: null, note_updated_by: user?.email || '', note_updated_at: new Date().toISOString() })
+    const { error: e2 } = await supabase.from('fms_collection').update(upd).eq('party_name', p.party_name)
     setSaving(false)
     if (e1 || e2) { setErr('Save failed: ' + (e1 || e2).message); return }
-    onSaved?.(stage === 'Close' ? '✅ Saved — party closed, it leaves the Today/Tomorrow lists.'
+    onSaved?.(stop ? '🚫 Saved — permanent note set, party is out of the follow-up worklist (see "Excluded").'
+      : stage === 'Close' ? '✅ Saved — party closed, it leaves the Today/Tomorrow lists.'
       : stage === 'Transfer' ? `✅ Saved — this party now shows under ${tTo.trim()} as well.`
-      : stage === 'Payment received' ? '✅ Saved as claimed — the hourly ERP sync will confirm it against the bills.'
+      : isPay ? '✅ Saved as claimed — the hourly ERP sync will confirm it against the bills.'
       : `✅ Saved! Next follow-up ${dmy(nextDate)} — it will appear under "Today" that day.`)
     onClose()
   }
@@ -115,39 +147,68 @@ function FollowupForm({ p, bills, salesmen, demo, onClose, onSaved }) {
         </div>
         <div className="fup2-grid">
           <div className="step-form">
-            <b><span className="step-num">1</span> What happened?</b>
+            <b><span className="step-num">1</span> Stage</b>
             <div className="stage-grid">
-              {STAGES.map((s) => <button key={s} className={`stage-opt ${stage === s ? 'on' : ''}`} title={STAGE_HINT[s]} onClick={() => pickStage(s)}>{s}</button>)}
+              {FORM_STAGES.map((st) => <button key={st} className={`stage-opt ${stage === st ? 'on' : ''}`} title={STAGE_HINT[st]} onClick={() => pickStage(st)}>{st}</button>)}
             </div>
-            {stage && <span className="muted small stage-hint">{STAGE_HINT[stage]}</span>}
-            <input placeholder='What did they say? e.g. "Will pay by RTGS on the 5th"' value={remark} onChange={(e) => setRemark(e.target.value)} autoFocus />
+            {stage ? <span className="muted small stage-hint">{STAGE_HINT[stage]}</span> : <span className="muted small stage-hint">Pick what happened — the form shows only the fields for that stage.</span>}
           </div>
           <div className="step-form">
             <b><span className="step-num">2</span> Details</b>
+            {!stage && <span className="muted small">Choose a stage first.</span>}
+            {stage === 'Follow-up' && <>
+              <select value={says} onChange={(e) => setSays(e.target.value)} autoFocus>
+                <option value="">What did the customer say?…</option>
+                {saysOpts.map((o) => <option key={o} value={o}>{o}</option>)}
+                <option value="Other">Other (write below)</option>
+              </select>
+            </>}
+            {stage === 'Payment received' && <>
+              <div className="fld-row">
+                <input type="number" placeholder="Amount received ₹" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+                <select value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+                  <option value="">Mode…</option>{PAY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="fld-row">
+                <select value={recvBy} onChange={(e) => setRecvBy(e.target.value)} title="Who collected it">
+                  {RECEIVED_BY.map((r) => <option key={r} value={r}>Payment by {r}</option>)}
+                </select>
+                {recvBy === 'Salesman' && <select value={recvSm} onChange={(e) => setRecvSm(e.target.value)}>
+                  <option value="">Which salesman…</option>{salesmen.map((sm) => <option key={sm} value={sm}>{sm}</option>)}
+                </select>}
+              </div>
+              <span className="muted small">Amount is a claim — the ERP receipt confirms it and splits it across bills automatically.</span>
+            </>}
             {stage === 'Committed' && <div className="fld-row">
-              <input type="number" placeholder="Promised amount ₹" value={cAmt} onChange={(e) => setCAmt(e.target.value)} />
+              <input type="number" placeholder="Promised amount ₹" value={cAmt} onChange={(e) => setCAmt(e.target.value)} autoFocus />
               <input type="date" value={cDate} title="Promised date" onChange={(e) => setCDate(e.target.value)} />
             </div>}
+            {stage === 'CRM Support' && <select value={support} onChange={(e) => setSupport(e.target.value)} autoFocus>
+              <option value="">Support type…</option>
+              {(formOpts.support_types || []).map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>}
             {stage === 'Transfer' && <div className="fld-row">
-              <input list="coll-salesmen" placeholder="Transfer to (salesman)" value={tTo} onChange={(e) => setTTo(e.target.value)} />
-              <datalist id="coll-salesmen">{salesmen.map((s) => <option key={s} value={s} />)}</datalist>
+              <select value={tTo} onChange={(e) => setTTo(e.target.value)} autoFocus>
+                <option value="">Transfer to…</option>{salesmen.map((sm) => <option key={sm} value={sm}>{sm}</option>)}
+              </select>
               <input placeholder="Reason" value={tReason} onChange={(e) => setTReason(e.target.value)} />
             </div>}
-            <div className="fld-row">
-              <input type="number" placeholder="Amount received now (blank if none)" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              {Number(amount) > 0 && <select value={payMode} onChange={(e) => setPayMode(e.target.value)}>
-                <option value="">Mode…</option>{PAY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>}
-            </div>
-            <span className="muted small">Amount is a claim — the ERP receipt confirms it and splits it across bills automatically.</span>
+            {stage && <input placeholder={remarkPh} value={remark} onChange={(e) => setRemark(e.target.value)} autoFocus={stage === 'Close'} />}
+            <label className={`chk small fup-stop ${stop ? 'on' : ''}`}>
+              <input type="checkbox" checked={stop} onChange={(e) => setStop(e.target.checked)} /> 🚫 Permanent note — do <b>not</b> follow up this party
+            </label>
+            {stop && <input placeholder="Why? e.g. account under dispute / handled by owner directly" value={stopNote} onChange={(e) => setStopNote(e.target.value)} />}
+            {stop && <span className="muted small">Party moves to the "Excluded" list (highlighted) and no next date is kept.</span>}
           </div>
           <div className="step-form">
             <b><span className="step-num">3</span> When to remind next?</b>
-            <input type="datetime-local" value={nextDate} disabled={stage === 'Close'} onChange={(e) => setNextDate(e.target.value)} />
-            {stage !== 'Close' && <div className="fld-row quick">
-              {[['Tomorrow', 1], ['+3 days', 3], ['+7 days', 7], ['+15 days', 15]].map(([l, d]) => <button key={d} className="btn ghost sm" onClick={() => quickNext(d)}>{l}</button>)}
+            <input type="datetime-local" value={nextDate} disabled={!needNext} onChange={(e) => setNextDate(e.target.value)} />
+            {needNext && <div className="fld-row quick">
+              {[['Tomorrow', 1], ['+3 days', 3], ['+7 days', 7], ['+15 days', 15], ['+50 days', 50]].map(([l, d]) => <button key={d} className="btn ghost sm" onClick={() => quickNext(d)}>{l}</button>)}
             </div>}
             {stage === 'Close' && <span className="muted small">Close = no next date; party leaves the worklist.</span>}
+            {stop && <span className="muted small">Permanent note = no next date.</span>}
             <button className="btn primary" onClick={save} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save follow-up'}</button>
             {err && <span className="err small" style={{ marginTop: 0 }}>{err}</span>}
           </div>
@@ -158,7 +219,7 @@ function FollowupForm({ p, bills, salesmen, demo, onClose, onSaved }) {
 }
 
 // ---------- Party modal body: stats, actions, tabs (bills / receipts / history), permanent note ----------
-function PartyDetail({ p, ag, bucket, demo, salesmen, onSaved, onToast }) {
+function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast }) {
   const [selBills, setSelBills] = useState([])
   const [form, setForm] = useState(null)      // null | { bills: [{vno, pending}] }
   const [tab, setTab] = useState('bills')
@@ -329,7 +390,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, onSaved, onToast }) {
       {tab === 'rcpt' && <div className="coll-rcpts"><Receipts list={ag.receipts} /></div>}
       {tab === 'hist' && <div className="fup-log tall"><Timeline entries={ag.entries} waCount={ag.waCount} /></div>}
 
-      {form && <FollowupForm p={p} bills={form.bills} salesmen={salesmen} demo={demo} onClose={() => setForm(null)} onSaved={saved} />}
+      {form && <FollowupForm p={p} bills={form.bills} salesmen={salesmen} formOpts={formOpts} demo={demo} onClose={() => setForm(null)} onSaved={saved} />}
     </div>
   )
 }
@@ -351,6 +412,7 @@ export default function Collection() {
   const [showHelp, setShowHelp] = useState(() => !localStorage.getItem('fms_coll_help_seen'))
   const cols = useColVis('fms_coll_cols', COLL_DEFAULT_ON)
   const [colPanel, setColPanel] = useState(false)   // false | 'cols' | 'print'
+  const formOpts = useFormOpts()                     // follow-up form dropdowns (Stage Plan se editable)
   const [toast, setToast] = useState('')
   const [pulseOpen, setPulseOpen] = useState(() => localStorage.getItem('fms_coll_pulse') !== '0')
   // Pulse date range — default: is mahine
@@ -617,7 +679,7 @@ export default function Collection() {
               {filtered.slice(0, 200).map((e) => {
                 const { p, ag, pr } = e
                 return (
-                  <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''}`} onClick={() => setOpen(p.party_name)}>
+                  <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''} ${p.permanent_note ? 'is-excluded' : ''}`} onClick={() => setOpen(p.party_name)}>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} /></td>
                     {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e)}</td>)}
@@ -645,7 +707,7 @@ export default function Collection() {
               </div>
               <button className="btn ghost" onClick={() => setOpen(null)}>✕ Close</button>
             </div>
-            <PartyDetail key={openE.p.party_name} p={openE.p} ag={openE.ag} bucket={openE.bucket} demo={demo} salesmen={salesmen} onSaved={() => setTick((t) => t + 1)} onToast={setToast} />
+            <PartyDetail key={openE.p.party_name} p={openE.p} ag={openE.ag} bucket={openE.bucket} demo={demo} salesmen={salesmen} formOpts={formOpts} onSaved={() => setTick((t) => t + 1)} onToast={setToast} />
           </div>
         </div>
       )}

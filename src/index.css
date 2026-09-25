@@ -493,6 +493,18 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .stage-chip.st-bad { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); border-color: color-mix(in srgb, var(--red) 50%, transparent); }
 .stage-chip.st-park { background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 55%, transparent); }
 .stage-chip.st-close { color: var(--muted); border-style: dashed; }
+.stage-chip.st-flw { color: var(--txt); background: var(--panel2); }
+.stage-chip.st-says { color: var(--txt); border-style: dashed; font-weight: 600; }
+.tag-stop { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 50%, transparent); }
+/* permanent note wali party: poori row laal tint + strike name — "is party ka follow-up nahi karna" ek nazar me */
+.pr-row.is-excluded td { background: color-mix(in srgb, var(--red) 7%, transparent) !important; }
+.pr-row.is-excluded td:first-child { border-left: 3px solid var(--red); }
+.pr-row.is-excluded .pcell-n { text-decoration: line-through; color: var(--muted); }
+.fup-stop { margin-top: 6px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 8px; display: flex; gap: 6px; align-items: center; }
+.fup-stop.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); color: var(--red); }
+.form-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
+.form-opts label { display: flex; flex-direction: column; gap: 4px; }
+.form-opts textarea { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--txt); resize: vertical; }
 .stage-chip .muted { font-weight: 400; }
 .bk-pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); white-space: nowrap; color: var(--muted); }
 .bk-pill.bk-missed { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }

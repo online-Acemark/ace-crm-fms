@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
-import { inr, inrShort, dmy, isoDay, normKey, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, normKey, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, SALES_DEFAULT_ON, useColVis, cellOf, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -47,6 +47,8 @@ const matchChip = (e, key) => {
 
 // ---------- commitment form (salesman ka wada: kitna, kab, remark) ----------
 function CommitForm({ p, ag, selBills, demo, onSaved }) {
+  const formOpts = useFormOpts()
+  const [says, setSays] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(() => isoDay(suggestNextFollowup()))
   const [remark, setRemark] = useState('')
@@ -65,6 +67,7 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
     const { error } = await supabase.from('fms_followups').insert({
       party_name: p.party_name, mode: 'call', stage: 'Committed',
       remarks: remark.trim() || `Committed ${inr(amount)} by ${dmy(date)}`,
+      customer_says: says || null,
       committed_amount: Number(amount), committed_date: date,
       bill_nos: selBills.map((b) => b.vno),
       followup_date: isoDay(), created_by: user?.email || '',
@@ -91,6 +94,12 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
         </label>
         <label className="small muted">Promised date
           <input type="date" value={date} min={isoDay()} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <label className="small muted">Customer says
+          <select value={says} onChange={(e) => setSays(e.target.value)}>
+            <option value="">— optional —</option>
+            {(formOpts.customer_says || []).map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
         </label>
         <label className="small muted">Remark
           <input placeholder="e.g. RTGS after their collection on the 5th" value={remark} onChange={(e) => setRemark(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} />

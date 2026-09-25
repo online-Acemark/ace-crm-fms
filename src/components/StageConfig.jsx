@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { SCORE_DEFAULTS } from '../lib/coll'
+import { SCORE_DEFAULTS, FORM_DEFAULTS } from '../lib/coll'
 
 export default function StageConfig({ stages, scoring, onChanged }) {
   const [edit, setEdit] = useState({})
@@ -40,6 +40,23 @@ export default function StageConfig({ stages, scoring, onChanged }) {
     setTimeout(() => setCsMsg(''), 5000)
   }
   const daysToZero = cs.penalty_per_day > 0 ? Math.ceil((cs.on_time_points - cs.min_points) / cs.penalty_per_day) : null
+
+  // Collection follow-up form ke dropdowns — fms_settings key 'coll_form' (ek line = ek option)
+  const [cf, setCf] = useState({ customer_says: FORM_DEFAULTS.customer_says.join('\n'), support_types: FORM_DEFAULTS.support_types.join('\n') })
+  const [cfMsg, setCfMsg] = useState('')
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('demo')) return
+    supabase.from('fms_settings').select('value').eq('key', 'coll_form').maybeSingle()
+      .then(({ data }) => { if (data?.value) setCf({ customer_says: (data.value.customer_says || []).join('\n'), support_types: (data.value.support_types || []).join('\n') }) })
+  }, [])
+  const saveCollForm = async () => {
+    const lines = (t) => [...new Set(String(t).split('\n').map((x) => x.trim()).filter(Boolean))]
+    const v = { customer_says: lines(cf.customer_says), support_types: lines(cf.support_types) }
+    if (!v.customer_says.length || !v.support_types.length) { setCfMsg('❌ Both lists need at least one option'); return }
+    const { error } = await supabase.from('fms_settings').upsert({ key: 'coll_form', value: v, updated_at: new Date().toISOString() })
+    setCfMsg(error ? '❌ ' + error.message : '✅ Saved — the follow-up form shows the new options on its next open')
+    setTimeout(() => setCfMsg(''), 5000)
+  }
 
   const val = (s, f) => edit[s.id]?.[f] ?? s[f] ?? ''
   const set = (s, f, v) => setEdit((p) => ({ ...p, [s.id]: { ...(p[s.id] || {}), [f]: v } }))
@@ -90,6 +107,19 @@ export default function StageConfig({ stages, scoring, onChanged }) {
           {csMsg && <span className="small"><b>{csMsg}</b></span>}
         </div>
         <p className="muted small">Follow-up on the planned day or earlier = {cs.on_time_points} points. Each day late −{cs.penalty_per_day}{daysToZero ? ` (reaches the minimum after ${daysToZero} days)` : ''}. Plan date passed with no call = missed = {cs.min_points}. Week = Monday–Saturday. Shown in Scoreboard → Collection Follow-up Score.</p>
+      </div>
+      <div className="panel">
+        <h2>📝 Collection Follow-up Form Options</h2>
+        <p className="muted small">Dropdowns of the follow-up form (Collection tab). One option per line. "&lt;Salesman&gt; - Visit" options are added automatically from the ERP salesman list.</p>
+        <div className="form-opts">
+          <label className="small muted">Customer says (stage Follow-up)
+            <textarea rows={7} value={cf.customer_says} onChange={(e) => setCf({ ...cf, customer_says: e.target.value })} />
+          </label>
+          <label className="small muted">CRM Support type
+            <textarea rows={7} value={cf.support_types} onChange={(e) => setCf({ ...cf, support_types: e.target.value })} />
+          </label>
+        </div>
+        <div className="fld-row"><button className="btn primary" onClick={saveCollForm}>Save Form Options</button>{cfMsg && <span className="small"><b>{cfMsg}</b></span>}</div>
       </div>
     </div>
   )
