@@ -337,9 +337,8 @@ export default function Salesman({ user, access }) {
           <table className="cfg-tbl coll-tbl sm-tbl">
             <thead>
               <tr>
-                <th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}
+                <th className="no-print">Action</th><th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}
                 {visCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''} title={c.title || ''}>{c.label}</th>)}
-                <th className="no-print">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -347,11 +346,11 @@ export default function Salesman({ user, access }) {
                 const { p, ag, pr } = e
                 return (
                   <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''}`} onClick={() => setOpen(p.party_name)}>
+                    <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} showSalesman={false} me={allView ? '' : me} /></td>
                     {allView && <td className="small">{p.salesman || '—'}</td>}
                     {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e)}</td>)}
-                    <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
                   </tr>
                 )
               })}

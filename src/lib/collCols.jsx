@@ -142,7 +142,7 @@ export function printTable(nCols) {
     @page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 8mm; }
     .coll-tbl { font-size: ${font.toFixed(1)}px !important; table-layout: fixed; width: 100% !important; min-width: 0 !important; }
     .coll-tbl th, .coll-tbl td { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; padding: 2px 3px !important; }
-    .coll-tbl th:nth-child(2), .coll-tbl td:nth-child(2) { width: ${Math.round(perCol * 2.2)}px; }
+    .coll-tbl th:nth-child(3), .coll-tbl td:nth-child(3) { width: ${Math.round(perCol * 2.2)}px; }   /* Party (Action column print me hidden hai) */
     .coll-tbl .small, .coll-tbl .muted, .coll-tbl .pcell-m, .coll-tbl .pcell-m .tag { font-size: 0.9em !important; }
     .coll-tbl .pcell-n { font-size: 1em; white-space: normal; }
     .coll-tbl .pcell-m { white-space: normal; }

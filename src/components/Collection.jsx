@@ -669,10 +669,10 @@ export default function Collection() {
           <table className="cfg-tbl coll-tbl">
             <thead>
               <tr>
+                <th className="no-print">Action</th>
                 <th>{sortBtn('priority', 'Priority', 'Most important on top — work in this order')}</th>
                 <th>{sortBtn('party_name', 'Party')}</th>
                 {visCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''} title={c.title || ''}>{c.sort ? sortBtn(c.sort, c.label, c.title) : c.label}</th>)}
-                <th className="no-print">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -680,10 +680,10 @@ export default function Collection() {
                 const { p, ag, pr } = e
                 return (
                   <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''} ${p.permanent_note ? 'is-excluded' : ''}`} onClick={() => setOpen(p.party_name)}>
+                    <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} /></td>
                     {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e)}</td>)}
-                    <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
                   </tr>
                 )
               })}

@@ -451,7 +451,7 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .limit-bar { flex: 1; height: 7px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; min-width: 60px; }
 .limit-fill { height: 100%; background: var(--green); }
 .limit-fill.over { background: var(--red); }
-.coll-actions { white-space: nowrap; }
+.coll-actions { white-space: nowrap; width: 1%; }   /* pehla column: Call / WhatsApp / Note */
 .coll-actions .btn, .coll-actions .wa-btn { margin-right: 4px; }
 
 /* Collection page ko poori width do (action-page ka 1100px cap yahan nahi) */

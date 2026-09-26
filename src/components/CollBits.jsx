@@ -214,9 +214,9 @@ export function TotalsRow({ visCols, totals, count, lead = 2 }) {
   return (
     <tfoot>
       <tr className="coll-totals">
+        <td className="no-print" />
         <td colSpan={lead}>Total · {count} parties</td>
         {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''} title={c.total ? inr(totals[c.key]) : ''}>{c.total ? (Math.abs(totals[c.key]) > 1 ? inrShort(totals[c.key]) : '—') : ''}</td>)}
-        <td className="no-print" />
       </tr>
     </tfoot>
   )
