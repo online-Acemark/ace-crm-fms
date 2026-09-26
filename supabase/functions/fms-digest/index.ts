@@ -22,6 +22,24 @@ const nowIST = () => new Date(Date.now() + IST);
 const inr = (v: unknown) => "Rs." + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const dmy = (dt: Date) => `${String(dt.getDate()).padStart(2, "0")}/${String(dt.getMonth() + 1).padStart(2, "0")}`;
 
+// ---- bill-wise (app ke billStatuses jaisa): ek SO ke kai bills; har bill ka apna GP Out / dispatch / payment status ----
+type Bill = { bill_no: string; billing_date: string | null; amount: number; qty: number; lines: number; status: string; gp_nos: string[]; pay_status: string | null; pending: number };
+const billsOf = (o: any): Bill[] => {
+  const ps: any[] = Array.isArray(o.products) ? o.products : [];
+  const pay = new Map<string, any>((Array.isArray(o.bills_payment) ? o.bills_payment : []).map((b: any) => [String(b.bill_no), b]));
+  return (Array.isArray(o.bills) ? o.bills : []).map((b: any) => {
+    const key = String(b.bill_no);
+    const lines = ps.filter((x) => String(x.bno ?? "") === key);
+    const gp = lines.filter((x) => x.gpno != null);
+    const out = lines.filter((x) => x.gpno != null && x.ddt);
+    const status = lines.length && out.length === lines.length ? "dispatched" : lines.length && gp.length === lines.length ? "gpout" : gp.length ? "partial" : "pending";
+    const pm: any = pay.get(key);
+    return { bill_no: key, billing_date: b.billing_date || null, amount: Number(b.amount) || 0, qty: Number(b.qty) || 0, lines: lines.length, status,
+      gp_nos: [...new Set(gp.map((x) => String(x.gpno)))], pay_status: pm?.status || null, pending: pm ? Number(pm.pending) || 0 : Number(b.amount) || 0 };
+  });
+};
+const BILL_TXT: Record<string, string> = { gpout: "GP done, dispatch baaki", partial: "GP partly done", pending: "GP Out baaki" };
+
 Deno.serve(async () => {
   try {
     const settings = await sb("fms_settings?key=eq.telegram&select=value");
@@ -30,7 +48,7 @@ Deno.serve(async () => {
       return new Response(JSON.stringify({ ok: false, error: "fms_settings me key='telegram' set karo: { token, chat_id }" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const orders = await sb("fms_orders?select=mobile_so_no,account_name,mobile_no,acc_family,salesman,so_convert_date,billing_date,desp_date,credit_days,bill_net_amount,sorder_amount,payment_complete,next_followup_date,mobile_so_created,pay_status,payment_pending_erp&cancelled=eq.false");
+    const orders = await sb("fms_orders?select=mobile_so_no,account_name,mobile_no,acc_family,salesman,so_convert_date,billing_date,desp_date,credit_days,bill_net_amount,sorder_amount,payment_complete,next_followup_date,mobile_so_created,pay_status,payment_pending_erp,on_hold,bills,products,bills_payment&cancelled=eq.false");
     const now = nowIST();
     const noFup = (o: any) => String(o.acc_family || "").trim().toUpperCase() === "N";
     const paid = (o: any) => o.payment_complete || o.pay_status === "Full";
@@ -38,17 +56,31 @@ Deno.serve(async () => {
 
     const confirmPending = orders.filter((o: any) => !o.so_convert_date);
     const billingPending = orders.filter((o: any) => o.so_convert_date && !o.billing_date);
-    const dispatchDue = orders.filter((o: any) => o.billing_date && !o.desp_date);
+    // Dispatch due — BILL-WISE (app ke Today Work jaisa): bill bana par nikla nahi; hold wale bahar
+    const dispatchDue: any[] = [];
+    for (const o of orders) {
+      if (o.on_hold || o.desp_date) continue;
+      const bs = billsOf(o).filter((b) => b.status !== "dispatched");
+      if (bs.length) dispatchDue.push(...bs.map((b) => ({ o, b })));
+      else if (o.billing_date && !(Array.isArray(o.bills) && o.bills.length)) dispatchDue.push({ o, b: null }); // purana data (bills nahi) -> order-level
+    }
+    const dispatchOrders = new Set(dispatchDue.map((x) => x.o.mobile_so_no)).size;
 
-    const overdue = orders
-      .filter((o: any) => !paid(o) && !noFup(o) && o.billing_date && o.credit_days != null)
-      .map((o: any) => {
-        const due = new Date((d(o.billing_date) as Date).getTime() + o.credit_days * 864e5);
+    // Payment overdue — BILL-WISE: har unpaid bill ki apni due date (bill date + credit days) aur baaki
+    const overdue: any[] = [];
+    for (const o of orders) {
+      if (paid(o) || noFup(o) || o.credit_days == null) continue;
+      const bs = billsOf(o).filter((b) => b.pay_status !== "Full" && b.billing_date);
+      const items = bs.length ? bs.map((b) => ({ o, b, date: b.billing_date, amt: b.pending, part: b.pay_status === "Part" }))
+        : o.billing_date ? [{ o, b: null, date: o.billing_date, amt: baaki(o), part: o.pay_status === "Part" }] : [];
+      for (const it of items) {
+        const due = new Date((d(it.date) as Date).getTime() + o.credit_days * 864e5);
         const days = Math.floor((now.getTime() - due.getTime()) / 864e5);
-        return { ...o, due, days };
-      })
-      .filter((o: any) => o.days > 0)
-      .sort((a: any, b: any) => b.days - a.days);
+        if (days > 0 && it.amt > 0) overdue.push({ ...it, due, days });
+      }
+    }
+    overdue.sort((a, b) => b.days - a.days);
+    const overdueParties = new Set(overdue.map((x) => x.o.account_name)).size;
 
     const fupToday = orders.filter((o: any) => !paid(o) && !noFup(o) && o.next_followup_date && (d(o.next_followup_date) as Date) <= now);
 
@@ -58,8 +90,8 @@ Deno.serve(async () => {
     L.push(`Aaj ke kaam:`);
     L.push(`- Naye orders confirm karne hain: ${confirmPending.length}`);
     L.push(`- Billing pending: ${billingPending.length}`);
-    L.push(`- Dispatch due: ${dispatchDue.length}`);
-    L.push(`- Payment overdue parties: ${overdue.length}`);
+    L.push(`- Dispatch due: ${dispatchDue.length} bill${dispatchDue.length === 1 ? "" : "s"} (${dispatchOrders} order${dispatchOrders === 1 ? "" : "s"})`);
+    L.push(`- Payment overdue: ${overdue.length} bill${overdue.length === 1 ? "" : "s"} | ${overdueParties} parties`);
     L.push(`- Follow-up aaj due: ${fupToday.length}`);
 
     if (fupToday.length) {
@@ -73,12 +105,24 @@ Deno.serve(async () => {
 
     if (overdue.length) {
       L.push("");
-      const totalOut = overdue.reduce((a: number, o: any) => a + baaki(o), 0);
-      L.push(`PAYMENT OVERDUE (${overdue.length} | baaki ${inr(totalOut)}):`);
-      for (const o of overdue.slice(0, 10)) {
-        L.push(`- ${o.days}d late | ${o.account_name} | baaki ${inr(baaki(o))}${o.pay_status === "Part" ? " (Part paid)" : ""} | #${o.mobile_so_no} | ${o.mobile_no || ""} | ${o.salesman || ""}`);
+      const totalOut = overdue.reduce((a: number, x: any) => a + x.amt, 0);
+      L.push(`PAYMENT OVERDUE (${overdue.length} bills | ${overdueParties} parties | baaki ${inr(totalOut)}):`);
+      for (const x of overdue.slice(0, 10)) {
+        const o = x.o;
+        L.push(`- ${x.days}d late | ${o.account_name}${x.b ? " | Bill " + x.b.bill_no : ""} | baaki ${inr(x.amt)}${x.part ? " (Part paid)" : ""} | #${o.mobile_so_no} | ${o.mobile_no || ""} | ${o.salesman || ""}`);
       }
-      if (overdue.length > 10) L.push(`  ...aur ${overdue.length - 10} parties`);
+      if (overdue.length > 10) L.push(`  ...aur ${overdue.length - 10} bills`);
+    }
+
+    if (dispatchDue.length) {
+      L.push("");
+      L.push(`DISPATCH DUE (${dispatchDue.length} bills):`);
+      for (const x of dispatchDue.slice(0, 8)) {
+        const o = x.o, b = x.b;
+        L.push(b ? `- Bill ${b.bill_no} | ${o.account_name} | ${inr(b.amount)} | ${BILL_TXT[b.status] || b.status}${b.gp_nos.length ? " (GP " + b.gp_nos.join(",") + ")" : ""} | #${o.mobile_so_no} | ${o.salesman || ""}`
+          : `- #${o.mobile_so_no} | ${o.account_name} | ${inr(o.bill_net_amount || o.sorder_amount)} | ${o.salesman || ""}`);
+      }
+      if (dispatchDue.length > 8) L.push(`  ...aur ${dispatchDue.length - 8} bills`);
     }
 
     if (confirmPending.length) {

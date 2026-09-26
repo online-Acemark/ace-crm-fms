@@ -10,7 +10,7 @@ function NAHI badalta — deploy karna padta hai (`supabase functions deploy <na
 |---|---|---|
 | `fms-proxy` | ERP APIs (MobileSO, ProductStock) ka CORS proxy | App (Sync ERP button, stock column) |
 | `fms-sync` | Pura ERP sync server-side — orders + delays + scores `fms_orders` me | Cron: har 30 min (`fms-auto-sync`, `*/30 * * * *`) |
-| `fms-digest` | Roz subah ka Telegram digest (counts, follow-ups, payment overdue, Collection: Missed / Aaj due / Broken promise / kal ka kaam) | Cron: 9:00 AM IST (`fms-daily-digest`, `30 3 * * *` UTC) |
+| `fms-digest` | Roz subah ka Telegram digest (counts, follow-ups, payment overdue + dispatch due BILL-WISE, Collection: Missed / Aaj due / Broken promise / kal ka kaam) | Cron: 9:00 AM IST (`fms-daily-digest`, `30 3 * * *` UTC) |
 | `fms-alerts` | `?mode=instant`: naya order + confirm late; `?mode=dispatch`: 2 PM dispatch reminder | Cron: `5,35 * * * *` (instant) aur 2:00 PM IST (`30 8 * * *` UTC) |
 | `fms-collection-sync` | Poore ledger ka party-wise outstanding (PaymentFollowup + UrgentPaymentFollow) -> `fms_collection` (aging, bills, PDC, credit limit). Fully-paid parties auto-delete. Payment.ashx se receipts voucher-wise -> `fms_receipts`, aur har bill me `pay_status/received/still_pending/pay_vnos`. | Cron: har ghante :20 par (`fms-collection-sync`, `20 * * * *`) |
 

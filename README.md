@@ -39,8 +39,9 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
   dispatched only when every line has a GP Out no and a dispatch date). Dispatched bills drop out of
   the list while the order's other bills stay. Payment rows use the bill's due date and ERP pending
   (`bills_payment`); Full-paid bills are hidden. Helpers: `billStatuses()`, `billDispatchDelay()` in
-  `src/lib/fms.js`. Confirm / Billing sections and the order score stay SO-level. The digest /
-  2 PM dispatch alert still count orders, not bills.
+  `src/lib/fms.js`. Confirm / Billing sections and the order score stay SO-level. The Telegram
+  digest (Dispatch due + Payment overdue lines and lists) and the 2 PM dispatch reminder use the
+  same bill-wise rule (same `billsOf()` helper inside `fms-digest` / `fms-alerts`).
 - Order drawer lists every bill with items and its GP / dispatch status.
 
 ## Collection tab — follow-up system (Supabase)

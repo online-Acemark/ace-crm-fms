@@ -25,6 +25,24 @@ const d = (v: unknown) => {
 };
 const nowIST = () => new Date(Date.now() + IST);
 const inr = (v: unknown) => "Rs." + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+
+// ---- bill-wise (app ke billStatuses jaisa): ek SO ke kai bills; har bill ka apna GP Out / dispatch / payment status ----
+type Bill = { bill_no: string; billing_date: string | null; amount: number; qty: number; lines: number; status: string; gp_nos: string[]; pay_status: string | null; pending: number };
+const billsOf = (o: any): Bill[] => {
+  const ps: any[] = Array.isArray(o.products) ? o.products : [];
+  const pay = new Map<string, any>((Array.isArray(o.bills_payment) ? o.bills_payment : []).map((b: any) => [String(b.bill_no), b]));
+  return (Array.isArray(o.bills) ? o.bills : []).map((b: any) => {
+    const key = String(b.bill_no);
+    const lines = ps.filter((x) => String(x.bno ?? "") === key);
+    const gp = lines.filter((x) => x.gpno != null);
+    const out = lines.filter((x) => x.gpno != null && x.ddt);
+    const status = lines.length && out.length === lines.length ? "dispatched" : lines.length && gp.length === lines.length ? "gpout" : gp.length ? "partial" : "pending";
+    const pm: any = pay.get(key);
+    return { bill_no: key, billing_date: b.billing_date || null, amount: Number(b.amount) || 0, qty: Number(b.qty) || 0, lines: lines.length, status,
+      gp_nos: [...new Set(gp.map((x) => String(x.gpno)))], pay_status: pm?.status || null, pending: pm ? Number(pm.pending) || 0 : Number(b.amount) || 0 };
+  });
+};
+const BILL_TXT: Record<string, string> = { gpout: "GP done, dispatch baaki", partial: "GP partly done", pending: "GP Out baaki" };
 const hm = (dt: Date) => dt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
 const ymd = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 
@@ -64,14 +82,26 @@ Deno.serve(async (req) => {
     const now = nowIST();
 
     if (mode === "dispatch") {
-      const orders = await sb("fms_orders?select=mobile_so_no,account_name,salesman,billing_date,desp_date,bill_net_amount,sorder_amount&billing_date=not.is.null&desp_date=is.null&cancelled=eq.false");
-      if (!orders.length) return new Response(JSON.stringify({ ok: true, sent: false, note: "koi dispatch pending nahi" }), { headers: { "Content-Type": "application/json" } });
-      const L = [`DISPATCH REMINDER (2 PM) — 4 baje se pehle nikalna hai:`, ""];
-      for (const o of orders.slice(0, 15)) L.push(`- #${o.mobile_so_no} | ${o.account_name} | ${inr(o.bill_net_amount || o.sorder_amount)} | ${o.salesman || ""}`);
-      if (orders.length > 15) L.push(`...aur ${orders.length - 15} orders`);
-      L.push("", `Total pending dispatch: ${orders.length}`);
+      // BILL-WISE (app ke Today Work jaisa): bill bana par nikla nahi — har bill apni line; hold wale bahar
+      const orders = await sb("fms_orders?select=mobile_so_no,account_name,salesman,billing_date,desp_date,bill_net_amount,sorder_amount,on_hold,bills,products,bills_payment&desp_date=is.null&cancelled=eq.false&on_hold=not.is.true");
+      const due: any[] = [];
+      for (const o of orders) {
+        const bs = billsOf(o).filter((b) => b.status !== "dispatched");
+        if (bs.length) due.push(...bs.map((b) => ({ o, b })));
+        else if (o.billing_date && !(Array.isArray(o.bills) && o.bills.length)) due.push({ o, b: null });
+      }
+      if (!due.length) return new Response(JSON.stringify({ ok: true, sent: false, note: "koi dispatch pending nahi" }), { headers: { "Content-Type": "application/json" } });
+      const nOrders = new Set(due.map((x) => x.o.mobile_so_no)).size;
+      const L = [`DISPATCH REMINDER (2 PM) — 4 baje se pehle nikalna hai (bill-wise):`, ""];
+      for (const x of due.slice(0, 15)) {
+        const o = x.o, b = x.b;
+        L.push(b ? `- Bill ${b.bill_no} | ${o.account_name} | ${inr(b.amount)} | ${BILL_TXT[b.status] || b.status}${b.gp_nos.length ? " (GP " + b.gp_nos.join(",") + ")" : ""} | #${o.mobile_so_no} | ${o.salesman || ""}`
+          : `- #${o.mobile_so_no} | ${o.account_name} | ${inr(o.bill_net_amount || o.sorder_amount)} | ${o.salesman || ""}`);
+      }
+      if (due.length > 15) L.push(`...aur ${due.length - 15} bills`);
+      L.push("", `Total pending dispatch: ${due.length} bills | ${nOrders} orders`);
       await sendTG(L.join("\n"));
-      return new Response(JSON.stringify({ ok: true, sent: true, dispatchPending: orders.length }), { headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, sent: true, dispatchPending: due.length, dispatchOrders: nOrders }), { headers: { "Content-Type": "application/json" } });
     }
 
     // mode=instant
