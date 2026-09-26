@@ -16,6 +16,33 @@ const fmtDate = (v) => {
   return new Date(y, mm - 1, dd).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
 }
 
+// table columns — picker se hide/show; "Save as default" localStorage me yaad rakhta hai
+const PQ_COLS = [
+  { key: 'Number', label: 'Order No', sort: 'Number' },
+  { key: 'Date', label: 'Date' },
+  { key: 'PartyName', label: 'Party', sort: 'PartyName' },
+  { key: 'ProductName', label: 'Product', sort: 'ProductName' },
+  { key: 'ProdBrand', label: 'Brand' },
+  { key: 'BaseCat', label: 'Category' },
+  { key: 'Godown', label: 'Godown' },
+  { key: 'QTY', label: 'Order Qty', sort: 'QTY', num: true },
+  { key: 'Balance', label: 'Pending', sort: 'Balance', num: true },
+  { key: 'NetStock', label: 'Stock', sort: 'NetStock', num: true, title: 'Current stock of this product' },
+  { key: 'Late', label: 'Late', sort: 'Late', title: 'Days late' },
+  { key: 'SumOfAmt', label: 'Value', sort: 'SumOfAmt', num: true },
+]
+const PQ_COLS_LS = 'fms_pq_cols'
+const loadPqCols = () => { try { const v = JSON.parse(localStorage.getItem(PQ_COLS_LS) || 'null'); if (Array.isArray(v) && v.length) return v } catch { /* ignore */ } return PQ_COLS.map((c) => c.key) }
+// Sort presets: party-wise = party A-Z, phir product A-Z; item-wise = product A-Z, phir party A-Z
+const SORT_PRESETS = [
+  { key: 'late', label: 'Most late first', sort: ['Late', 'desc'] },
+  { key: 'party', label: 'Party-wise (A–Z, then product)', sort: ['PartyName', 'asc'] },
+  { key: 'item', label: 'Item-wise (A–Z, then party)', sort: ['ProductName', 'asc'] },
+  { key: 'value', label: 'Highest value first', sort: ['SumOfAmt', 'desc'] },
+  { key: 'pending', label: 'Most pending qty first', sort: ['Balance', 'desc'] },
+]
+const TEXT_KEYS = ['PartyName', 'ProductName', 'Number', 'ProdBrand', 'BaseCat', 'Godown']
+
 export default function PendingQty() {
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState('')
@@ -27,6 +54,9 @@ export default function PendingQty() {
   const [onlyLate, setOnlyLate] = useState(false)
   const [onlyStock, setOnlyStock] = useState(false)
   const [sort, setSort] = useState(['Late', 'desc'])
+  const [visKeys, setVisKeys] = useState(loadPqCols)     // dikhne wale columns (saved default se shuru)
+  const [colPanel, setColPanel] = useState(false)
+  const [colMsg, setColMsg] = useState('')
 
   const load = () => {
     setErr('')
@@ -54,12 +84,20 @@ export default function PendingQty() {
     if (onlyStock) list = list.filter((r) => num(r.NetStock) >= num(r.Balance) && num(r.Balance) > 0)
     const [k, dir] = sort
     const mul = dir === 'desc' ? -1 : 1
-    return [...list].sort((a, b) => {
-      const av = ['PartyName', 'ProductName', 'Number'].includes(k) ? String(a[k] || '') : num(a[k])
-      const bv = ['PartyName', 'ProductName', 'Number'].includes(k) ? String(b[k] || '') : num(b[k])
-      return (av < bv ? -1 : av > bv ? 1 : 0) * mul
-    })
+    const val = (r, key) => TEXT_KEYS.includes(key) ? String(r[key] || '').trim().toLowerCase() : num(r[key])
+    const cmp = (a, b, key) => { const av = val(a, key), bv = val(b, key); return av < bv ? -1 : av > bv ? 1 : 0 }
+    // tie-breaker: party-wise me same party ke andar product A-Z; item-wise me same product ke andar party A-Z; baaki me party A-Z
+    const tie = k === 'PartyName' ? 'ProductName' : 'PartyName'
+    return [...list].sort((a, b) => cmp(a, b, k) * mul || cmp(a, b, tie) || cmp(a, b, 'Number'))
   }, [rows, q, godowns, division, cats, brand, onlyLate, onlyStock, sort])
+
+  const visCols = PQ_COLS.filter((c) => visKeys.includes(c.key))
+  const toggleCol = (k) => setVisKeys((v) => (v.includes(k) ? (v.length > 1 ? v.filter((x) => x !== k) : v) : PQ_COLS.map((c) => c.key).filter((x) => x === k || v.includes(x))))
+  const saveCols = () => { try { localStorage.setItem(PQ_COLS_LS, JSON.stringify(visKeys)) } catch { /* ignore */ } setColMsg('✅ Saved — these columns will show by default from now on'); setTimeout(() => setColMsg(''), 4000) }
+  const resetCols = () => { try { localStorage.removeItem(PQ_COLS_LS) } catch { /* ignore */ } setVisKeys(PQ_COLS.map((c) => c.key)); setColMsg('Reset — all columns, default cleared'); setTimeout(() => setColMsg(''), 4000) }
+  const savedKeys = (() => { try { return JSON.parse(localStorage.getItem(PQ_COLS_LS) || 'null') } catch { return null } })()
+  const isSaved = Array.isArray(savedKeys) && savedKeys.length === visKeys.length && savedKeys.every((k) => visKeys.includes(k))
+  const presetKey = SORT_PRESETS.find((p) => p.sort[0] === sort[0] && p.sort[1] === sort[1])?.key || ''
 
   const kpi = useMemo(() => {
     const list = filtered
@@ -110,53 +148,62 @@ export default function PendingQty() {
           </select>
           <label className="chk"><input type="checkbox" checked={onlyLate} onChange={(e) => setOnlyLate(e.target.checked)} /> Late only</label>
           <label className="chk" title="Lines where current stock covers the pending qty"><input type="checkbox" checked={onlyStock} onChange={(e) => setOnlyStock(e.target.checked)} /> Stock available</label>
+          <select value={presetKey} onChange={(e) => { const p = SORT_PRESETS.find((x) => x.key === e.target.value); if (p) setSort(p.sort) }} title="Sort order (column headers also sort)">
+            {!presetKey && <option value="">Sort: {PQ_COLS.find((c) => c.sort === sort[0])?.label || sort[0]} {sort[1] === 'desc' ? '↓' : '↑'}</option>}
+            {SORT_PRESETS.map((p) => <option key={p.key} value={p.key}>Sort: {p.label}</option>)}
+          </select>
           {anyFilter && <button className="btn ghost sm" onClick={() => { setQ(''); setGodowns([]); setDivision(''); setCats([]); setBrand(''); setOnlyLate(false); setOnlyStock(false) }}>✕ Clear filters</button>}
           <span className="filter-count active">🔎 {filtered.length} / {(rows || []).length} lines</span>
-          <button className="btn ghost sm" title="Print this table" onClick={() => window.print()}>🖨 Print</button>
+          <button className={`btn ghost sm ${colPanel ? 'on' : ''}`} title="Show / hide table columns" onClick={() => setColPanel((v) => !v)}>⚙ Columns{visCols.length < PQ_COLS.length ? ` (${visCols.length}/${PQ_COLS.length})` : ''}</button>
+          <button className="btn ghost sm" title="Print this table with the columns shown" onClick={() => window.print()}>🖨 Print</button>
         </div>
+        {colPanel && (
+          <div className="coll-colpanel">
+            <div className="colpanel-head"><b>⚙ Columns</b><span className="muted small">Tick what you want to see. "Save as default" remembers it on this device — the table opens like this every time.</span></div>
+            <div className="colpanel-cols">
+              {PQ_COLS.map((c) => <label key={c.key} className="small chk"><input type="checkbox" checked={visKeys.includes(c.key)} onChange={() => toggleCol(c.key)} /> {c.label}</label>)}
+            </div>
+            <div className="colpanel-foot">
+              <button className="btn ghost sm" onClick={resetCols}>Reset (all columns)</button>
+              <button className={`btn sm ${isSaved ? 'ghost' : 'primary'}`} onClick={saveCols} disabled={isSaved}>{isSaved ? '✓ Saved as default' : '💾 Save as default'}</button>
+              {colMsg && <span className="small"><b>{colMsg}</b></span>}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="panel coll-list">
         <table className="cfg-tbl pq-tbl">
           <thead>
             <tr>
-              <th>{sortBtn('Number', 'Order No')}</th>
-              <th>Date</th>
-              <th>{sortBtn('PartyName', 'Party')}</th>
-              <th>{sortBtn('ProductName', 'Product')}</th>
-              <th>Brand</th>
-              <th>Category</th>
-              <th>Godown</th>
-              <th>{sortBtn('QTY', 'Order Qty')}</th>
-              <th>{sortBtn('Balance', 'Pending')}</th>
-              <th title="Current stock of this product">{sortBtn('NetStock', 'Stock')}</th>
-              <th>{sortBtn('Late', 'Late', 'Days late')}</th>
-              <th>{sortBtn('SumOfAmt', 'Value')}</th>
+              {visCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''} title={c.title || ''}>{c.sort ? sortBtn(c.sort, c.label, c.title) : c.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {filtered.slice(0, 500).map((r, i) => {
               const late = num(r.Late)
               const stockOk = num(r.NetStock) >= num(r.Balance) && num(r.Balance) > 0
-              return (
-                <tr key={i}>
-                  <td><b>{r.Number}</b></td>
-                  <td className="small">{fmtDate(r.Date)}</td>
-                  <td className="pq-party"><b>{r.PartyName}</b></td>
-                  <td className="pq-prod" title={`${r.ProductName} (${r.ProductCode || ''})`}>{r.ProductName}<div className="muted small">{r.ProductCode}</div></td>
-                  <td className="small">{r.ProdBrand || '—'}</td>
-                  <td className="small pq-cat" title={`${r.BaseCat || ''} › ${r.ProdCat || ''} › ${r.ProdSubGroup || ''}`}>{r.BaseCat || '—'}</td>
-                  <td className="small">{r.Godown || '—'}</td>
-                  <td className="num">{num(r.QTY).toLocaleString('en-IN')}</td>
-                  <td className="num"><b>{num(r.Balance).toLocaleString('en-IN')}</b></td>
-                  <td className={`num ${stockOk ? 'green-t' : num(r.NetStock) <= 0 ? 'red-t' : ''}`} title={stockOk ? 'Stock covers pending qty — can dispatch' : ''}>{num(r.NetStock).toLocaleString('en-IN')}</td>
-                  <td>{late > 0 ? <span className={late > 30 ? 'red-t' : 'amber-t'}><b>{late}d</b></span> : <span className="muted">—</span>}</td>
-                  <td className="num">{inr(r.SumOfAmt)}</td>
-                </tr>
-              )
+              const cell = (k) => {
+                switch (k) {
+                  case 'Number': return <td key={k}><b>{r.Number}</b></td>
+                  case 'Date': return <td key={k} className="small">{fmtDate(r.Date)}</td>
+                  case 'PartyName': return <td key={k} className="pq-party"><b>{r.PartyName}</b></td>
+                  case 'ProductName': return <td key={k} className="pq-prod" title={`${r.ProductName} (${r.ProductCode || ''})`}>{r.ProductName}<div className="muted small">{r.ProductCode}</div></td>
+                  case 'ProdBrand': return <td key={k} className="small">{r.ProdBrand || '—'}</td>
+                  case 'BaseCat': return <td key={k} className="small pq-cat" title={`${r.BaseCat || ''} › ${r.ProdCat || ''} › ${r.ProdSubGroup || ''}`}>{r.BaseCat || '—'}</td>
+                  case 'Godown': return <td key={k} className="small">{r.Godown || '—'}</td>
+                  case 'QTY': return <td key={k} className="num">{num(r.QTY).toLocaleString('en-IN')}</td>
+                  case 'Balance': return <td key={k} className="num"><b>{num(r.Balance).toLocaleString('en-IN')}</b></td>
+                  case 'NetStock': return <td key={k} className={`num ${stockOk ? 'green-t' : num(r.NetStock) <= 0 ? 'red-t' : ''}`} title={stockOk ? 'Stock covers pending qty — can dispatch' : ''}>{num(r.NetStock).toLocaleString('en-IN')}</td>
+                  case 'Late': return <td key={k}>{late > 0 ? <span className={late > 30 ? 'red-t' : 'amber-t'}><b>{late}d</b></span> : <span className="muted">—</span>}</td>
+                  case 'SumOfAmt': return <td key={k} className="num">{inr(r.SumOfAmt)}</td>
+                  default: return null
+                }
+              }
+              return <tr key={i}>{visCols.map((c) => cell(c.key))}</tr>
             })}
-            {!filtered.length && <tr><td colSpan={12} className="muted">No pending lines match this filter.</td></tr>}
-            {filtered.length > 500 && <tr><td colSpan={12} className="muted small">…and {filtered.length - 500} more lines — use the filters above</td></tr>}
+            {!filtered.length && <tr><td colSpan={visCols.length} className="muted">No pending lines match this filter.</td></tr>}
+            {filtered.length > 500 && <tr><td colSpan={visCols.length} className="muted small">…and {filtered.length - 500} more lines — use the filters above</td></tr>}
           </tbody>
         </table>
       </div>

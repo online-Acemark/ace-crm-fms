@@ -387,6 +387,9 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .ms-caret { font-size: 10px; opacity: .7; }
 .ms-back { position: fixed; inset: 0; z-index: 39; }
 .ms-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px; min-width: 240px; max-width: 340px; max-height: 280px; overflow: auto; box-shadow: 0 8px 24px #0003; }
+.ms-search { width: 100%; box-sizing: border-box; padding: 6px 8px; margin: 2px 0 4px; font: inherit; font-size: 12.5px; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); color: var(--txt); }
+.ms-tools { display: flex; gap: 10px; justify-content: space-between; padding: 2px 9px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.ms-tools .link[disabled] { opacity: .45; cursor: default; }
 .ms-item { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 7px; cursor: pointer; font-size: 12.5px; }
 .ms-item:hover { background: var(--hover); }
 .ms-item input { width: 15px; height: 15px; cursor: pointer; flex: none; }
@@ -600,7 +603,7 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .uc-tbl select { padding: 4px 6px; font-size: 12px; max-width: 190px; }
 /* ================= Collection / My Parties — next-level UI ================= */
 .coll-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-.coll-tools .btn.on { border-color: var(--blue); color: var(--blue); }
+.coll-tools .btn.on, .action-filter .btn.on { border-color: var(--blue); color: var(--blue); }
 /* KPI cards: icon + number + label, coloured accent strip */
 .coll-kpis { gap: 8px; }
 .kpi-card { position: relative; padding: 10px 14px 10px 16px; border-radius: 12px; min-width: 150px; overflow: hidden; transition: transform .12s ease, box-shadow .12s ease; }
