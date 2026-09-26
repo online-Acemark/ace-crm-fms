@@ -371,6 +371,7 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .act-tbl .act-party { min-width: 220px; }
 .act-tbl .fam-cell { white-space: nowrap; }
 .act-tbl .fam-cell .fam-badge { margin-left: 0; }
+.act-tbl .bill-items { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Today Work: salesman ka micro-order remark (delivery instruction) */
 .so-remark { color: var(--amber); margin-top: 2px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

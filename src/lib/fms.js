@@ -445,6 +445,54 @@ export function computeScore(pipe, scoring) {
   return Math.round((total / wsum) * 10) / 10
 }
 
+// ---------- bill-wise view (Today Work: Dispatch due / Payment) ----------
+// Ek Mobile SO ke kai bills ho sakte hain (firm/date wise). Har bill ka apna GP Out / dispatch
+// status product lines (bno, gpno, gpdt, ddt) se nikalta hai; payment status bills_payment se.
+export function billStatuses(o) {
+  const ps = o.products || []
+  const pay = new Map((o.bills_payment || []).map((b) => [String(b.bill_no), b]))
+  return (o.bills || []).map((b) => {
+    const key = String(b.bill_no)
+    const lines = ps.filter((x) => String(x.bno ?? '') === key)
+    const gp = lines.filter((x) => x.gpno != null)
+    const out = lines.filter((x) => x.gpno != null && x.ddt)   // ERP DespDate bina GP ke bhi aata hai — GP zaroori
+    const status = lines.length && out.length === lines.length ? 'dispatched'
+      : lines.length && gp.length === lines.length ? 'gpout'
+      : gp.length ? 'partial' : 'pending'
+    const maxOf = (f) => { const vs = lines.map((x) => x[f]).filter(Boolean).sort(); return vs.length ? vs.at(-1) : null }
+    const pm = pay.get(key)
+    return {
+      ...b, lines, status,
+      gp_nos: [...new Set(gp.map((x) => x.gpno))], gp_at: maxOf('gpdt'), desp_at: status === 'dispatched' ? maxOf('ddt') : null,
+      pay_status: pm?.status || null, received: pm ? Number(pm.received) || 0 : 0,
+      pending: pm ? Number(pm.pending) || 0 : Number(b.amount) || 0, last_pay: pm?.last_pay || null,
+    }
+  })
+}
+// bill ke dispatch ka planned time + delay (hours) — Stage Plan ke hisaab se:
+// cutoff stage ho to SO-level planned (4 PM rule), warna bill date (ya GP date) + planned hours
+export function billDispatchDelay(b, pipe, stages) {
+  const st = (stages || []).find((x) => x.stage_key === 'dispatch' && x.active)
+  if (!st || b.status === 'dispatched') return { planned: null, delayH: null }
+  let planned = null
+  if (st.use_cutoff) planned = pipe?.dispatch?.planned || null
+  else {
+    const gpSt = (stages || []).find((x) => x.stage_key === 'gpout' && x.active)
+    const gpDone = b.status === 'gpout' && b.gp_at
+    const base = gpDone ? erpDate(b.gp_at) : erpDate(b.billing_date)
+    const hours = (gpDone ? 0 : Number(gpSt?.planned_hours) || 0) + (Number(st.planned_hours) || 0)
+    if (base) planned = new Date(base.getTime() + hours * H)
+  }
+  const now = new Date()
+  return { planned, delayH: planned && now > planned ? (now - planned) / H : null }
+}
+export const BILL_STATUS = {
+  dispatched: { label: 'Dispatched', cls: 'green-t' },
+  gpout: { label: 'GP Out done — dispatch baaki', cls: 'amber-t' },
+  partial: { label: 'GP Out partly done', cls: 'amber-t' },
+  pending: { label: 'GP Out baaki', cls: 'red-t' },
+}
+
 export function fmtDelay(h) {
   if (h == null) return ''
   if (h < 1) return `${Math.round(h * 60)}m`

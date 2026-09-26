@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup, getStockMap } from '../lib/fms'
+import { computePipeline, fmtDelay, fmtDT, fmtERP, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, suggestNextFollowup, getStockMap, billStatuses, BILL_STATUS } from '../lib/fms'
 import { toLocalInput } from './Grid'
 
 const inr = (v) => v == null ? '—' : '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -140,9 +140,19 @@ export default function OrderDrawer({ order, stages, scoring, onClose, onChanged
             )}
             {order.on_hold && <p className="small amber-t" style={{ marginTop: 6 }}><b>⏸ On hold in ERP</b> — order roka gaya hai, delay/score me nahi ginta</p>}
             {order.so_remark && <p className="small" style={{ marginTop: 6 }}>💬 <b>Salesman remark:</b> {order.so_remark}</p>}
-            {(order.inv_urls || []).length > 0 && <>
-              <h3>🧾 Invoices</h3>
-              {(order.inv_urls || []).map((u, i) => <a key={i} className="link" href={u} target="_blank" rel="noreferrer">Invoice PDF {i + 1}</a>)}
+            {(order.bills || []).length > 0 && <>
+              <h3>🧾 Bills ({order.bills.length})</h3>
+              <ul className="billpay-list">
+                {billStatuses(order).map((b) => (
+                  <li key={b.bill_no}>
+                    <b>#{b.bill_no}</b> · {fmtERP(b.billing_date)} · {inr(b.amount)} · {b.lines.length} item{b.lines.length === 1 ? '' : 's'} — <span className={BILL_STATUS[b.status].cls}><b>{BILL_STATUS[b.status].label}</b></span>
+                    {b.gp_nos.length > 0 && <span className="muted"> · GP {b.gp_nos.join(', ')}{b.gp_at ? ' · ' + fmtERP(b.gp_at) : ''}</span>}
+                    {b.desp_at && <span className="muted"> · dispatched {fmtERP(b.desp_at)}</span>}
+                    {b.url && <> · <a className="link" href={b.url} target="_blank" rel="noreferrer">PDF</a></>}
+                    {b.lines.length > 0 && <div className="muted small">{b.lines.map((x) => `${x.name} (${Number(x.bqty ?? x.qty) || 0})`).join(', ')}</div>}
+                  </li>
+                ))}
+              </ul>
             </>}
             <div className="amounts">
               <div>SO: <b>{inr(order.sorder_amount)}</b></div>

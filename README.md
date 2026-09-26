@@ -32,6 +32,17 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
   Jo blank hai wo grid me dotted box hai — wahin type karo, `contact_manual` (JSONB) me save hota hai
   aur agla sync usse kabhi overwrite nahi karta. Filter: "📇 Contact info missing".
 
+## Today Work — bill-wise rows
+- One Mobile SO can be billed as several invoices (firm / date wise). **Dispatch Due** and **Payment
+  Follow-up** show one row per bill: bill no + date + PDF, amount, qty, items, and the bill's own
+  GP Out / dispatch status (from the product lines: `bno, gpno, gpdt, ddt`; a bill counts as
+  dispatched only when every line has a GP Out no and a dispatch date). Dispatched bills drop out of
+  the list while the order's other bills stay. Payment rows use the bill's due date and ERP pending
+  (`bills_payment`); Full-paid bills are hidden. Helpers: `billStatuses()`, `billDispatchDelay()` in
+  `src/lib/fms.js`. Confirm / Billing sections and the order score stay SO-level. The digest /
+  2 PM dispatch alert still count orders, not bills.
+- Order drawer lists every bill with items and its GP / dispatch status.
+
 ## Collection tab — follow-up system (Supabase)
 - Party list `fms_collection` (hourly ERP sync) + follow-up log `fms_followups` (party-level rows).
 - **Follow-up entry** (party modal) works like the old Google Form: pick a Stage, the form shows only
