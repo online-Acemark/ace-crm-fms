@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 // Dropdown with checkboxes — multiple options tick karke filter karo.
 // options: [{ key, label }] ya simple strings; value: selected keys ka array; khali = All (koi filter nahi)
-// Panel me search + "Select all shown" (jo items dikh rahe hain sab tick) + "Clear" (wapas All).
+// Panel me search + "All" checkbox: tick = jo items dikh rahe hain sab tick, untick = sab untick (clear).
 export default function MultiSelect({ label, options, value, onChange }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -12,11 +12,12 @@ export default function MultiSelect({ label, options, value, onChange }) {
   const allShownOn = shown.length > 0 && shown.every((o) => value.includes(o.key))
 
   const toggle = (k) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k])
-  // Select all (shown): search lagi ho to sirf dikh rahe items add hote hain, baaki selection waise hi rehti hai
-  const selectShown = () => onChange(allShownOn ? value.filter((k) => !shown.some((o) => o.key === k)) : [...new Set([...value, ...shown.map((o) => o.key)])])
-  const btnText = value.length === 0 ? `${label}: All`
+  // "All" checkbox = select all / clear: tick -> jo items dikh rahe hain sab tick; untick -> sab untick (koi filter nahi)
+  const toggleAll = () => onChange(allShownOn
+    ? (s ? value.filter((k) => !shown.some((o) => o.key === k)) : [])
+    : [...new Set([...value, ...shown.map((o) => o.key)])])
+  const btnText = value.length === 0 || value.length === opts.length ? `${label}: All`
     : value.length === 1 ? `${label}: ${opts.find((o) => o.key === value[0])?.label ?? value[0]}`
-    : value.length === opts.length ? `${label}: All ${opts.length} ticked`
     : `${label}: ${value.length} selected`
 
   return (
@@ -28,15 +29,9 @@ export default function MultiSelect({ label, options, value, onChange }) {
         <div className="ms-back" onClick={() => { setOpen(false); setQ('') }} />
         <div className="ms-panel">
           {opts.length > 6 && <input className="ms-search" placeholder={`Search ${label.toLowerCase()}…`} value={q} onChange={(e) => setQ(e.target.value)} autoFocus />}
-          <div className="ms-tools">
-            <button className="link small" onClick={selectShown} disabled={!shown.length} title={s ? 'Tick every item matching the search' : 'Tick every item in the list'}>
-              {allShownOn ? '☐ Untick all' : '☑ Select all'}{s ? ` shown (${shown.length})` : ` (${shown.length})`}
-            </button>
-            <button className="link small" onClick={() => onChange([])} disabled={!value.length} title="No filter — show everything">✕ Clear (All)</button>
-          </div>
-          <label className="ms-item">
-            <input type="checkbox" checked={value.length === 0} onChange={() => onChange([])} />
-            <span><b>All</b> <span className="muted">(no filter)</span></span>
+          <label className="ms-item ms-all">
+            <input type="checkbox" checked={allShownOn} onChange={toggleAll} disabled={!shown.length} />
+            <span><b>All</b> <span className="muted">{s ? `(${shown.length} shown)` : `(${opts.length})`} · tick = select all, untick = clear</span></span>
           </label>
           {shown.map((o) => (
             <label key={o.key} className="ms-item">

@@ -33,9 +33,9 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
   aur agla sync usse kabhi overwrite nahi karta. Filter: "📇 Contact info missing".
 
 ## Pending Order tab
-- Filters: search, Godown / Category multi-select (dropdown has a search box, "Select all" ticks
-  every item currently shown, "Clear (All)" removes the filter), Division, Brand, Late only, Stock
-  available. Sort presets: most late / party-wise (party A–Z then product) / item-wise (product A–Z
+- Filters: search, Godown / Category multi-select (dropdown has a search box; the "All" checkbox
+  is select-all / clear: tick = every item currently shown gets ticked, untick = everything unticked
+  = no filter), Division, Brand, Late only, Stock available. Sort presets: most late / party-wise (party A–Z then product) / item-wise (product A–Z
   then party) / value / pending qty; column headers still sort, with party → product tie-breakers.
 - ⚙ Columns: tick the columns to show; "Save as default" stores them in localStorage
   (`fms_pq_cols`) so the table opens that way every time on that device; Reset shows all. Print
