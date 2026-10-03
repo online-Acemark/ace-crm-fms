@@ -99,12 +99,12 @@ export function sortVal(k, e, dir) {
 }
 
 // ---------- extra filters (beat / aging bucket / company / difference) ----------
-export const EMPTY_FILTERS = { beat: '', agingF: '', company: '', diffF: '' }
+export const EMPTY_FILTERS = { beat: [], agingF: '', company: '', diffF: '' } // beat = multi-select
 export function useExtraFilters() {
   const [f, setF] = useState(EMPTY_FILTERS)
   const set = (k, v) => setF((o) => ({ ...o, [k]: v }))
   const clear = () => setF(EMPTY_FILTERS)
-  const any = !!(f.beat || f.agingF || f.company || f.diffF)
+  const any = !!(f.beat.length || f.agingF || f.company || f.diffF)
   return { f, set, clear, any }
 }
 export function filterOptions(rows) {
@@ -114,7 +114,8 @@ export function filterOptions(rows) {
   }
 }
 export function applyExtraFilters(list, { beat, agingF, company, diffF }) {
-  if (beat) list = list.filter((e) => String(e.p.beat || '').trim() === beat)
+  const beats = Array.isArray(beat) ? beat : beat ? [beat] : []
+  if (beats.length) list = list.filter((e) => beats.includes(String(e.p.beat || '').trim()))
   if (agingF) list = list.filter((e) => Number(e.p.aging?.[agingF] || 0) > 0)
   if (company) list = list.filter((e) => firmsOf(e.p).includes(company))
   if (diffF) list = list.filter((e) => (Math.abs(agingDiff(e.p)) > 1) === (diffF === 'yes'))
@@ -122,7 +123,7 @@ export function applyExtraFilters(list, { beat, agingF, company, diffF }) {
 }
 // print header ke liye: lage hue filters ek line me
 export function extraFilterText({ beat, agingF, company, diffF }) {
-  return [beat, agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : ''].filter(Boolean)
+  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : ''].filter(Boolean)
 }
 
 // footer totals: jo parties filter me dikh rahi hain, unka column-wise jod (sirf number columns)

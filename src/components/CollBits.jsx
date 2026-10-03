@@ -1,6 +1,7 @@
 // Collection / My Parties shared UI bits: aging chips, limit bar, stage/bucket pills, timeline, ERP receipts.
 import { useState } from 'react'
 import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, dmy, dmyt, userName, avaColor, initials, firmsOf, firmShort } from '../lib/coll'
+import MultiSelect from './MultiSelect'
 
 export function AgingChips({ aging }) {
   const a = aging || {}
@@ -165,10 +166,7 @@ export const Skeleton = ({ rows = 6 }) => (
 // Toolbar ke extra filters: Beat / Aging bucket / Company / Difference (Collection + My Parties dono me)
 export function ExtraFilters({ opts, f, set, onDiffYes }) {
   return (<>
-    <select value={f.beat} onChange={(e) => set('beat', e.target.value)} title="Parties of this beat (ERP)">
-      <option value="">Beat: All</option>
-      {opts.beats.map((b) => <option key={b} value={b}>{b}</option>)}
-    </select>
+    <MultiSelect label="Beat" options={opts.beats} value={f.beat} onChange={(v) => set('beat', v)} />
     <select value={f.agingF} onChange={(e) => set('agingF', e.target.value)} title="Only parties that have pending money in this age bucket">
       <option value="">Aging: All</option>
       {BUCKETS.map(([k, l]) => <option key={k} value={k}>{l} days</option>)}
