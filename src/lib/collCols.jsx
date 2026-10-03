@@ -55,7 +55,7 @@ export function useColVis(lsKey, defaultOn) {
 // ek cell ka content — e = { p, ag, bucket, broken }
 export function cellOf(c, { p, ag, bucket, broken }) {
   switch (c.key) {
-    case 'total_pending': return <><b>{inrShort(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></>
+    case 'total_pending': return <><b>{inr(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></>
     case 'oldest_od': return p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'
     case 'aging': return <AgingChips aging={p.aging} />
     case 'company': return <FirmChips p={p} />

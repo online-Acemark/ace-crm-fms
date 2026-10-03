@@ -278,7 +278,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
   }
 
   const stats = [
-    { l: 'Total pending', v: inrShort(p.total_pending), s: `${p.bill_count} bills`, cls: 'vio' },
+    { l: 'Total pending', v: inr(p.total_pending), s: `${p.bill_count} bills`, cls: 'vio' },
     { l: 'Overdue bills', v: overdueBills.length, s: `of ${(p.bills || []).length}`, cls: overdueBills.length ? 'amb' : '' },
     { l: 'Oldest', v: p.oldest_od ? `${p.oldest_od} d` : '—', cls: p.oldest_od > 90 ? 'red' : '' },
     { l: 'Last payment', v: r0 ? inrShort(r0.amount) : p.last_pay_amt ? inrShort(p.last_pay_amt) : '—', s: r0 ? `${dmy(r0.pay_date)} · ${r0.pay_type}` : p.last_pay_date ? dmy(p.last_pay_date) : '', cls: 'grn' },
