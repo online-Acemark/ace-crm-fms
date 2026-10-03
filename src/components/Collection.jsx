@@ -250,18 +250,20 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
   const [fAges, setFAges] = useState([])
   const [fPdc, setFPdc] = useState('')
   const [showPaid, setShowPaid] = useState(false)
+  const [showAll, setShowAll] = useState(false) // false = sirf overdue; true = party ke SAARE pending bills
   const AGE_OPTS = ['1-30', '31-60', '61-90', '91-120', '121-150', '151-180', '180+']
   const ageBucket = (od) => od <= 30 ? '1-30' : od <= 60 ? '31-60' : od <= 90 ? '61-90' : od <= 120 ? '91-120' : od <= 150 ? '121-150' : od <= 180 ? '151-180' : '180+'
-  const firmOpts = [...new Set(overdueBills.map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
+  const baseBills = showAll ? (p.bills || []) : overdueBills
+  const firmOpts = [...new Set(baseBills.map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
   const today = isoDay()
   const hasPdc = (b) => !!(b.pdc_rcpt || b.pdc_date)
   // paid state: 'erp' = ERP Full (ERP list se agle sync me hatega) | 'claimed' = note me received likha, ERP me abhi nahi
   const paidState = (b) => b.pay_status === 'Full' ? 'erp' : ag.paid.has(b.vno) ? 'claimed' : ''
-  const paidN = overdueBills.filter((b) => paidState(b)).length
-  const shownBills = overdueBills.filter((b) =>
+  const paidN = baseBills.filter((b) => paidState(b)).length
+  const shownBills = baseBills.filter((b) =>
     (showPaid || !paidState(b)) &&
     (!fFirms.length || fFirms.includes(String(b.company || '').trim())) &&
-    (!fAges.length || fAges.includes(ageBucket(b.od || 0))) &&
+    (!fAges.length || ((b.od || 0) > 0 && fAges.includes(ageBucket(b.od)))) &&
     (!fPdc || (fPdc === 'none' ? !hasPdc(b) : hasPdc(b) && b.pdc_date && (fPdc === 'today' ? b.pdc_date === today : fPdc === 'up' ? b.pdc_date > today : b.pdc_date < today))))
   const hotN = shownBills.filter((b) => (b.od || 0) >= 60).length
   const filtersOn = fFirms.length > 0 || fAges.length > 0 || fPdc
@@ -328,6 +330,10 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
       {tab === 'bills' && (
         <div className="coll-bills">
           <div className="coll-bill-filters">
+            <div className="coll-presets">
+              <button className={!showAll ? 'preset-chip active' : 'preset-chip'} title="Sirf overdue bills" onClick={() => setShowAll(false)}>OD only ({overdueBills.length})</button>
+              <button className={showAll ? 'preset-chip active' : 'preset-chip'} title="Party ke saare pending bills — jo abhi due nahi hue wo bhi" onClick={() => setShowAll(true)}>All bills ({(p.bills || []).length})</button>
+            </div>
             <span className="muted small">Click 📝 on a bill to note a call about it, or tick several bills.{hotN > 0 && <span className="hot-lgd">{hotN} bill{hotN > 1 ? 's' : ''} 60+ days overdue</span>}</span>
             <span style={{ flex: 1 }} />
             <MultiSelect label="Firm" options={firmOpts} value={fFirms} onChange={setFFirms} />
@@ -338,7 +344,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
             {paidN > 0 && <label className="small chk"><input type="checkbox" checked={showPaid} onChange={(e) => setShowPaid(e.target.checked)} /> Show {paidN} paid / claimed</label>}
             {filtersOn && <>
               <button className="btn ghost sm" onClick={() => { setFFirms([]); setFAges([]); setFPdc('') }}>✕ Clear</button>
-              <span className="filter-count active">🔎 {shownBills.length} / {overdueBills.length}</span>
+              <span className="filter-count active">🔎 {shownBills.length} / {baseBills.length}</span>
             </>}
           </div>
           {selBills.length > 0 && (
@@ -373,14 +379,14 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
                     </tr>
                   )
                 })}
-                {!overdueBills.length && (
-                  <tr><td colSpan={11} className="muted">No overdue bills — all pending bills are still within their credit period.</td></tr>
+                {!baseBills.length && (
+                  <tr><td colSpan={11} className="muted">{showAll ? 'No pending bills.' : 'No overdue bills — all pending bills are still within their credit period. Click "All bills" to see them.'}</td></tr>
                 )}
-                {overdueBills.length > 0 && !shownBills.length && (
-                  <tr><td colSpan={11} className="muted">{paidN && !filtersOn ? 'All overdue bills are paid / claimed — tick "Show paid / claimed" to see them.' : 'No bills match this filter.'}</td></tr>
+                {baseBills.length > 0 && !shownBills.length && (
+                  <tr><td colSpan={11} className="muted">{paidN && !filtersOn ? 'All these bills are paid / claimed — tick "Show paid / claimed" to see them.' : 'No bills match this filter.'}</td></tr>
                 )}
                 {shownBills.length > 100 && (
-                  <tr><td colSpan={11} className="muted small">…and {shownBills.length - 100} more overdue bills (oldest 100 shown above)</td></tr>
+                  <tr><td colSpan={11} className="muted small">…and {shownBills.length - 100} more bills (oldest 100 shown above)</td></tr>
                 )}
               </tbody>
             </table>

@@ -1,7 +1,7 @@
 // Collection + My Parties ka shared table setup: columns, column picker state, filters, totals, print.
 // (Sirf non-component exports — components CollBits.jsx me hain, fast-refresh ke liye.)
 import { useMemo, useState } from 'react'
-import { inr, inrShort, dmy, userName, BUCKETS, agingSum, agingDiff, firmsOf } from './coll'
+import { inr, dmy, userName, BUCKETS, agingSum, agingDiff, firmsOf } from './coll'
 import { AgingChips, LimitBar, StageChip, BucketPill, FirmChips } from '../components/CollBits'
 
 // aging column ka rang: pehle 2 buckets green, agle 2 amber, baaki red (AgingChips jaisa)
@@ -59,13 +59,13 @@ export function cellOf(c, { p, ag, bucket, broken }) {
     case 'oldest_od': return p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'
     case 'aging': return <AgingChips aging={p.aging} />
     case 'company': return <FirmChips p={p} />
-    case 'aging_sum': { const v = agingSum(p); return v ? <b>{inrShort(v)}</b> : <span className="muted">—</span> }
-    case 'diff': { const v = agingDiff(p); return Math.abs(v) > 1 ? <b className="amber-t" title={`${inr(p.total_pending)} pending − ${inr(agingSum(p))} in aging`}>{inrShort(v)}</b> : <span className="muted">—</span> }
+    case 'aging_sum': { const v = agingSum(p); return v ? <b>{inr(v)}</b> : <span className="muted">—</span> }
+    case 'diff': { const v = agingDiff(p); return Math.abs(v) > 1 ? <b className="amber-t" title={`${inr(p.total_pending)} pending − ${inr(agingSum(p))} in aging`}>{inr(v)}</b> : <span className="muted">—</span> }
     case 'credit_limit': return <LimitBar pending={p.total_pending} limit={p.credit_limit} />
     case 'last_pay': {
       const r = ag.receipts[0]
-      if (r) return <span className="small">{inrShort(r.amount)}<div className="muted">{dmy(r.pay_date)} · {r.pay_type}</div></span>
-      return p.last_pay_amt ? <span className="small">{inrShort(p.last_pay_amt)}<div className="muted">{dmy(p.last_pay_date)}</div></span> : <span className="muted">—</span>
+      if (r) return <span className="small">{inr(r.amount)}<div className="muted">{dmy(r.pay_date)} · {r.pay_type}</div></span>
+      return p.last_pay_amt ? <span className="small">{inr(p.last_pay_amt)}<div className="muted">{dmy(p.last_pay_date)}</div></span> : <span className="muted">—</span>
     }
     case 'next': return <BucketPill b={bucket} date={p.next_followup_date} />
     case 'flw': return ag.count || ag.waCount
@@ -73,14 +73,14 @@ export function cellOf(c, { p, ag, bucket, broken }) {
       : <span className="muted">—</span>
     case 'stage': return ag.lastStage ? <StageChip s={ag.lastStage} /> : <span className="muted">—</span>
     case 'committed': return ag.committed
-      ? <span className={`small ${broken ? 'red-t' : ''}`}><b>{inrShort(ag.committed.amount)}</b><div className={broken ? 'red-t' : 'muted'}>{broken ? '💔 ' : 'by '}{dmy(ag.committed.date)}</div></span>
+      ? <span className={`small ${broken ? 'red-t' : ''}`}><b>{inr(ag.committed.amount)}</b><div className={broken ? 'red-t' : 'muted'}>{broken ? '💔 ' : 'by '}{dmy(ag.committed.date)}</div></span>
       : <span className="muted">—</span>
     case 'remark': return ag.last?.remarks ? <span className="small coll-remark" title={ag.last.remarks}>{ag.last.remarks}</span> : <span className="muted">—</span>
     case 'transfer': return ag.transferTo ? <span className="small" title={ag.transferReason}>↪ {ag.transferTo}</span> : <span className="muted">—</span>
     case 'city': return p.city || <span className="muted">—</span>
     case 'beat': return p.beat || <span className="muted">—</span>
     default: {
-      if (c.bkt) { const v = Number(p.aging?.[c.bkt] || 0); return v ? <span className={c.cls} title={inr(v)}>{inrShort(v)}</span> : <span className="muted">—</span> }
+      if (c.bkt) { const v = Number(p.aging?.[c.bkt] || 0); return v ? <span className={c.cls}>{inr(v)}</span> : <span className="muted">—</span> }
       return null
     }
   }

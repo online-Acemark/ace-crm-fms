@@ -1,6 +1,6 @@
 // Collection / My Parties shared UI bits: aging chips, limit bar, stage/bucket pills, timeline, ERP receipts.
 import { useState } from 'react'
-import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, inrShort, dmy, dmyt, userName, avaColor, initials, firmsOf, firmShort } from '../lib/coll'
+import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, dmy, dmyt, userName, avaColor, initials, firmsOf, firmShort } from '../lib/coll'
 
 export function AgingChips({ aging }) {
   const a = aging || {}
@@ -10,7 +10,7 @@ export function AgingChips({ aging }) {
   return (
     <div className="aging-chips">
       {chips.map((c) => (
-        <span key={c.k} className={`age-chip ${cls[c.i]}`} title={`${c.label} days old: ${inr(c.v)}`}>{c.label}d: {inrShort(c.v)}</span>
+        <span key={c.k} className={`age-chip ${cls[c.i]}`} title={`${c.label} days old`}>{c.label}d: {inr(c.v)}</span>
       ))}
     </div>
   )
@@ -151,7 +151,7 @@ export function NextUp({ e, onOpen }) {
       <Avatar name={p.party_name} size={36} />
       <div className="nextup-b">
         <div className="nextup-t">Start here: <b>{p.party_name}</b> <span className={`pr-badge ${pr.cls}`}>{pr.label}</span></div>
-        <div className="muted small">{pr.hint} · pending <b>{inrShort(p.total_pending)}</b>{p.oldest_od ? ` · oldest ${p.oldest_od} days` : ''}{p.mobile ? ` · ${p.mobile}` : ''}</div>
+        <div className="muted small">{pr.hint} · pending <b>{inr(p.total_pending)}</b>{p.oldest_od ? ` · oldest ${p.oldest_od} days` : ''}{p.mobile ? ` · ${p.mobile}` : ''}</div>
       </div>
       <button className="btn primary sm" onClick={() => onOpen(p.party_name)}>Open →</button>
     </div>
@@ -216,7 +216,7 @@ export function TotalsRow({ visCols, totals, count, lead = 2 }) {
       <tr className="coll-totals">
         <td className="no-print" />
         <td colSpan={lead}>Total · {count} parties</td>
-        {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''} title={c.total ? inr(totals[c.key]) : ''}>{c.total ? (Math.abs(totals[c.key]) > 1 ? inrShort(totals[c.key]) : '—') : ''}</td>)}
+        {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{c.total ? (Math.abs(totals[c.key]) > 1 ? inr(totals[c.key]) : '—') : ''}</td>)}
       </tr>
     </tfoot>
   )
@@ -240,9 +240,9 @@ export function PartyCard({ e, me, showSalesman, onOpen, actions }) {
       </div>
       <PartyCell p={p} ag={ag} showSalesman={showSalesman} me={me} />
       <div className="pcard-nums">
-        <div><span className="muted small">Pending</span><b>{inrShort(p.total_pending)}</b><span className="muted small">{p.bill_count} bills</span></div>
+        <div><span className="muted small">Pending</span><b>{inr(p.total_pending)}</b><span className="muted small">{p.bill_count} bills</span></div>
         <div><span className="muted small">Oldest</span><b className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}>{p.oldest_od ? p.oldest_od + 'd' : '—'}</b></div>
-        <div><span className="muted small">Promise</span>{ag.committed ? <b className={broken ? 'red-t' : ''}>{inrShort(ag.committed.amount)}<span className="muted small"> {broken ? '💔' : 'by'} {dmy(ag.committed.date)}</span></b> : <b className="muted">—</b>}</div>
+        <div><span className="muted small">Promise</span>{ag.committed ? <b className={broken ? 'red-t' : ''}>{inr(ag.committed.amount)}<span className="muted small"> {broken ? '💔' : 'by'} {dmy(ag.committed.date)}</span></b> : <b className="muted">—</b>}</div>
       </div>
       <AgingChips aging={p.aging} />
       <FirmChips p={p} />
