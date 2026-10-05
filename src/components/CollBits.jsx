@@ -234,10 +234,25 @@ export function TotalsRow({ visCols, totals, count, lead = 2 }) {
 }
 
 // Party ke bills kin firms ke hain — chhote chips (Stationers · Publications)
-export function FirmChips({ p }) {
+// Company chips ke saath us firm ka pending total — aging filter laga ho to
+// sirf unhi buckets ke bills ka jod (bill ki umar/overdue se bucket nikalta hai)
+export function FirmChips({ p, agingF }) {
+  const ages = Array.isArray(agingF) ? agingF : agingF ? [agingF] : []
+  const bkt = (d) => d <= 30 ? 'b0_30' : d <= 60 ? 'b31_60' : d <= 90 ? 'b61_90' : d <= 120 ? 'b91_120' : d <= 150 ? 'b121_150' : d <= 180 ? 'b151_180' : 'b180p'
+  const sums = {}
+  for (const b of (p?.bills || [])) {
+    const f = String(b.company || '').trim()
+    if (!f) continue
+    if (ages.length && !ages.includes(bkt(Number(b.days ?? b.od ?? 0)))) continue
+    sums[f] = (sums[f] || 0) + Number(b.pending ?? b.amt ?? 0)
+  }
   const firms = firmsOf(p)
   if (!firms.length) return <span className="muted small">—</span>
-  return <div className="firm-chips">{firms.map((f) => <span key={f} className="firm-chip" title={f}>{firmShort(f)}</span>)}</div>
+  return <div className="firm-chips">{firms.map((f) => (
+    <span key={f} className="firm-chip" title={`${f}: ${inr(sums[f] || 0)} pending${ages.length ? ' (selected aging buckets only)' : ''}`}>
+      {firmShort(f)} - <b>{inr(sums[f] || 0)}</b>
+    </span>
+  ))}</div>
 }
 
 // Mobile card (phone par table ki jagah)

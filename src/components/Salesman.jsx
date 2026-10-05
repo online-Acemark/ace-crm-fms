@@ -350,7 +350,7 @@ export default function Salesman({ user, access }) {
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} showSalesman={false} me={allView ? '' : me} /></td>
                     {allView && <td className="small">{p.salesman || '—'}</td>}
-                    {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e)}</td>)}
+                    {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e, xf.f)}</td>)}
                   </tr>
                 )
               })}

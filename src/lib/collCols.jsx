@@ -54,12 +54,12 @@ export function useColVis(lsKey, defaultOn) {
 }
 
 // ek cell ka content — e = { p, ag, bucket, broken }
-export function cellOf(c, { p, ag, bucket, broken }) {
+export function cellOf(c, { p, ag, bucket, broken }, xfF) {
   switch (c.key) {
     case 'total_pending': return <><b>{inr(p.total_pending)}</b><div className="muted small">{p.bill_count} bills</div></>
     case 'oldest_od': return p.oldest_od ? <span className={p.oldest_od > 90 ? 'red-t' : p.oldest_od > 30 ? 'amber-t' : ''}><b>{p.oldest_od} days</b></span> : '—'
     case 'aging': return <AgingChips aging={p.aging} />
-    case 'company': return <FirmChips p={p} />
+    case 'company': return <FirmChips p={p} agingF={xfF?.agingF} />
     case 'aging_sum': { const v = agingSum(p); return v ? <b>{inr(v)}</b> : <span className="muted">—</span> }
     case 'diff': { const v = agingDiff(p); return Math.abs(v) > 1 ? <b className="amber-t" title={`${inr(p.total_pending)} pending − ${inr(agingSum(p))} in aging`}>{inr(v)}</b> : <span className="muted">—</span> }
     case 'credit_limit': return <LimitBar pending={p.total_pending} limit={p.credit_limit} />

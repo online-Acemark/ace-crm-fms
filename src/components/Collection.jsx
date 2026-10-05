@@ -728,7 +728,7 @@ export default function Collection() {
                     <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} /></td>
-                    {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e)}</td>)}
+                    {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e, xf.f)}</td>)}
                   </tr>
                 )
               })}
