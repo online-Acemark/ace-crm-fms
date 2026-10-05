@@ -271,6 +271,19 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
   const r0 = ag.receipts[0]
   const broken = isBroken(ag)
 
+  // Firm-wise total: party ke SAARE pending bills firm ke hisaab se joda
+  const firmTotals = (() => {
+    const m = {}
+    for (const b of (p.bills || [])) {
+      const f = String(b.company || '').trim() || '—'
+      const t = m[f] || (m[f] = { firm: f, bills: 0, pending: 0, odBills: 0, odAmt: 0 })
+      const amt = Number(b.pending ?? b.amt ?? 0)
+      t.bills++; t.pending += amt
+      if ((b.od || 0) > 0) { t.odBills++; t.odAmt += amt }
+    }
+    return Object.values(m).sort((a, b) => b.pending - a.pending)
+  })()
+
   const erpCell = (b) => {
     const claimed = ag.paid.get(b.vno)
     if (b.pay_status === 'Full') return <span className="green-t small">✅ Full{b.last_pay_date ? ' · ' + dmy(b.last_pay_date) : ''}</span>
@@ -323,6 +336,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
 
       <Tabs active={tab} onChange={setTab} tabs={[
         { key: 'bills', label: '🧾 Overdue bills', n: overdueBills.length },
+        { key: 'firms', label: '🏢 Firm-wise total', n: firmTotals.length },
         { key: 'rcpt', label: '💵 Receipts (ERP)', n: ag.receipts.length },
         { key: 'hist', label: '🗒️ History', n: ag.count },
       ]} />
@@ -356,14 +370,14 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
           )}
           <div className="tbl-wrap-inner">
             <table className="cfg-tbl coll-bill-tbl">
-              <thead><tr><th title="Tick to select several bills for one note">✓</th><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th className="num">Pending</th><th title="From ERP Payment.ashx: Full / Part received, or your claimed amount awaiting ERP">ERP paid</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th><th></th></tr></thead>
+              <thead><tr><th className="no-print" title="Tick to select several bills for one note">✓</th><th>Bill No</th><th>Firm</th><th>Bill Date</th><th>Age</th><th className="num">Pending</th><th title="From ERP Payment.ashx: Full / Part received, or your claimed amount awaiting ERP">ERP paid</th><th>PDC (cheque)</th><th>Bilty</th><th>Notes</th><th className="no-print"></th></tr></thead>
               <tbody>
                 {shownBills.slice(0, 100).map((b, i) => {
                   const ps = paidState(b)
                   const cls = [ps ? 'coll-paid' : '', b.od > 180 ? 'coll-old' : b.od >= 60 ? 'coll-hot' : '', selBills.includes(b.vno) ? 'coll-sel' : ''].join(' ')
                   return (
                     <tr key={i} className={cls} onClick={() => b.vno && toggleBill(b.vno)}>
-                      <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selBills.includes(b.vno)} disabled={!b.vno} onChange={() => toggleBill(b.vno)} /></td>
+                      <td className="no-print" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selBills.includes(b.vno)} disabled={!b.vno} onChange={() => toggleBill(b.vno)} /></td>
                       <td><b>{b.vno || '—'}</b></td>
                       <td className="small">{b.company || '—'}</td>
                       <td>{dmy(b.date)}</td>
@@ -375,7 +389,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
                       <td className="small">{hasPdc(b) ? <span className={b.pdc_date && b.pdc_date < today ? 'red-t' : b.pdc_date === today ? 'amber-t' : ''}>✅ {b.pdc_rcpt || ''} {dmy(b.pdc_date)}</span> : '—'}</td>
                       <td className="small">{b.bilty || '—'}</td>
                       <td className="small coll-notes" title={b.notes || ''}>{b.notes || '—'}</td>
-                      <td onClick={(e) => e.stopPropagation()}>{b.vno && <button className="btn ghost sm" title={`Follow-up note for ${b.vno}`} onClick={() => openForm([b.vno])}>📝</button>}</td>
+                      <td className="no-print" onClick={(e) => e.stopPropagation()}>{b.vno && <button className="btn ghost sm" title={`Follow-up note for ${b.vno}`} onClick={() => openForm([b.vno])}>📝</button>}</td>
                     </tr>
                   )
                 })}
@@ -391,6 +405,34 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+      {tab === 'firms' && (
+        <div className="coll-bills">
+          <table className="cfg-tbl coll-bill-tbl firm-tbl">
+            <thead><tr><th>Firm</th><th className="num">Bills</th><th className="num">Overdue Bills</th><th className="num">Overdue Amount</th><th className="num">Total Pending</th></tr></thead>
+            <tbody>
+              {firmTotals.map((f) => (
+                <tr key={f.firm}>
+                  <td><b>{f.firm}</b></td>
+                  <td className="num">{f.bills}</td>
+                  <td className={`num ${f.odBills ? 'amber-t' : ''}`}>{f.odBills || '—'}</td>
+                  <td className={`num ${f.odAmt ? 'red-t' : ''}`}><b>{f.odAmt ? inr(f.odAmt) : '—'}</b></td>
+                  <td className="num"><b>{inr(f.pending)}</b></td>
+                </tr>
+              ))}
+              {!firmTotals.length && <tr><td colSpan={5} className="muted">No pending bills.</td></tr>}
+            </tbody>
+            {firmTotals.length > 1 && (
+              <tfoot><tr className="coll-totals">
+                <td>Total</td>
+                <td className="num">{firmTotals.reduce((a, f) => a + f.bills, 0)}</td>
+                <td className="num">{firmTotals.reduce((a, f) => a + f.odBills, 0)}</td>
+                <td className="num"><b>{inr(firmTotals.reduce((a, f) => a + f.odAmt, 0))}</b></td>
+                <td className="num"><b>{inr(firmTotals.reduce((a, f) => a + f.pending, 0))}</b></td>
+              </tr></tfoot>
+            )}
+          </table>
         </div>
       )}
       {tab === 'rcpt' && <div className="coll-rcpts"><Receipts list={ag.receipts} /></div>}
@@ -409,7 +451,7 @@ export default function Collection() {
   const [fups, setFups] = useState([])
   const [rcpts, setRcpts] = useState([])
   const [q, setQ] = useState('')
-  const [salesman, setSalesman] = useState('')
+  const [fSalesmen, setFSalesmen] = useState([]) // multi-select — khali = sab
   const xf = useExtraFilters()                  // beat / aging bucket / company / difference
   const [preset, setPreset] = useState('all')
   const [sort, setSort] = useState(['priority', 'desc'])
@@ -497,10 +539,10 @@ export default function Collection() {
     let list = enriched
     const s = q.trim().toLowerCase()
     if (s) list = list.filter(({ p }) => `${p.party_name} ${p.mobile || ''} ${p.city || ''} ${p.salesman || ''}`.toLowerCase().includes(s))
-    // salesman filter: apni parties + jo transfer hoke aayi
-    if (salesman) list = list.filter((e) => e.p.salesman === salesman || e.ag.transferTo === salesman)
+    // salesman filter: apni parties + jo transfer hoke aayi (multi-select)
+    if (fSalesmen.length) list = list.filter((e) => fSalesmen.includes(e.p.salesman) || fSalesmen.includes(e.ag.transferTo))
     return applyExtraFilters(list, xf.f)
-  }, [enriched, q, salesman, xf.f])
+  }, [enriched, q, fSalesmen, xf.f])
   const counts = useMemo(() => {
     const live = base.filter((e) => !e.p.permanent_note)
     const c = {}
@@ -537,9 +579,9 @@ export default function Collection() {
   const printNow = () => { setColPanel(false); printTable(visCols.length) }
 
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('fms_coll_help_seen', '1') } catch { /* private mode */ } }
-  const clearAll = () => { setQ(''); setSalesman(''); xf.clear(); setPreset('all') }
-  const anyFilter = q || salesman || xf.any || preset !== 'all'
-  const filterTxt = [preset !== 'all' ? preset : '', salesman, ...extraFilterText(xf.f), q ? `"${q}"` : ''].filter(Boolean).join(' · ')
+  const clearAll = () => { setQ(''); setFSalesmen([]); xf.clear(); setPreset('all') }
+  const anyFilter = q || fSalesmen.length || xf.any || preset !== 'all'
+  const filterTxt = [preset !== 'all' ? preset : '', fSalesmen.join(' + '), ...extraFilterText(xf.f), q ? `"${q}"` : ''].filter(Boolean).join(' · ')
   const chip = (pr) => <Chip key={pr.key} label={pr.label} n={counts[pr.key]} tone={pr.tone} active={preset === pr.key} onClick={() => setPreset(pr.key)} />
   const setRange = (f, t) => { setFrom(f); setTo(t) }
   const rangeTxt = from || to ? `${from ? dmy(from) : 'start'} – ${to ? dmy(to) : 'today'}` : 'all time'
@@ -637,10 +679,7 @@ export default function Collection() {
 
         <div className="coll-toolbar">
           <input className="search" placeholder="🔍 Search party / mobile / city…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <select value={salesman} onChange={(e) => setSalesman(e.target.value)} title="Own parties + parties transferred to this salesman">
-            <option value="">Salesman: All</option>
-            {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <MultiSelect label="Salesman" options={salesmen} value={fSalesmen} onChange={setFSalesmen} />
           <ExtraFilters opts={opts} f={xf.f} set={xf.set} onDiffYes={() => cols.showCol('diff')} />
           {anyFilter && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
           <span className="filter-count active">🔎 {filtered.length} / {kpi.parties}</span>
@@ -711,7 +750,10 @@ export default function Collection() {
                   <p className="muted small coll-modal-sub">{[openE.p.salesman, openE.p.beat, openE.p.city, openE.p.mobile].filter(Boolean).join(' · ')}{openE.p.credit_days ? ` · credit ${openE.p.credit_days} days` : ''}</p>
                 </div>
               </div>
-              <button className="btn ghost" onClick={() => setOpen(null)}>✕ Close</button>
+              <div className="no-print" style={{ display: 'flex', gap: 8 }}>
+                <button className="btn ghost" title="Print this party's detail (open tab) — seniors/salesman ko dene ke liye" onClick={() => window.print()}>🖨 Print</button>
+                <button className="btn ghost" onClick={() => setOpen(null)}>✕ Close</button>
+              </div>
             </div>
             <PartyDetail key={openE.p.party_name} p={openE.p} ag={openE.ag} bucket={openE.bucket} demo={demo} salesmen={salesmen} formOpts={formOpts} onSaved={() => setTick((t) => t + 1)} onToast={setToast} />
           </div>

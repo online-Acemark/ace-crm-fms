@@ -808,7 +808,21 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
   .topbar, .toast, .action-filter, .act-sec-tabs, .coll-filters, .coll-kpis, .coll-pulse, .coll-colpanel, .coll-help,
   .no-print, .sec-title .how, .legend, .demo-note { display: none !important; }
   /* Collection print = sirf table (+ ek line header): title, KPI, pulse, filters, chips, "Start here" sab chhupao */
-  .coll-page .action-head, .coll-page .nextup, .coll-page .modal-back { display: none !important; }
+  .coll-page .action-head, .coll-page .nextup { display: none !important; }
+
+  /* lambi list dusre page par jaye to har page par TABLE HEADING repeat ho */
+  thead { display: table-header-group; }
+  tfoot { display: table-row-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Party ka modal khula ho to print = SIRF modal (bill detail) — list nahi */
+  body:has(.coll-modal) .coll-page > *:not(.modal-back),
+  body:has(.coll-modal) .print-only { display: none !important; }
+  body:has(.coll-modal) .modal-back { display: block !important; position: static !important; padding: 0 !important; background: none !important; }
+  body:has(.coll-modal) .coll-modal { width: 100% !important; max-height: none !important; overflow: visible !important; border: none; box-shadow: none; padding: 0; }
+  .coll-modal .coll-actbar, .coll-modal .tabs, .coll-modal .coll-bill-filters, .coll-modal .sel-bar, .coll-modal .coll-flags { display: none !important; }
+  .coll-modal .tbl-wrap-inner { overflow: visible !important; }
+  .coll-modal .coll-bill-tbl { min-width: 0 !important; width: 100%; font-size: 10.5px; }
   .print-only { display: block !important; margin: 0 0 6px; }
   .coll-tbl { min-width: 0 !important; width: 100%; font-size: 10.5px; }
   .coll-tbl td, .coll-tbl th { padding: 3px 5px; }

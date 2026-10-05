@@ -167,10 +167,7 @@ export const Skeleton = ({ rows = 6 }) => (
 export function ExtraFilters({ opts, f, set, onDiffYes }) {
   return (<>
     <MultiSelect label="Beat" options={opts.beats} value={f.beat} onChange={(v) => set('beat', v)} />
-    <select value={f.agingF} onChange={(e) => set('agingF', e.target.value)} title="Only parties that have pending money in this age bucket">
-      <option value="">Aging: All</option>
-      {BUCKETS.map(([k, l]) => <option key={k} value={k}>{l} days</option>)}
-    </select>
+    <MultiSelect label="Aging" options={BUCKETS.map(([k, l]) => ({ key: k, label: l + ' days' }))} value={Array.isArray(f.agingF) ? f.agingF : []} onChange={(v) => set('agingF', v)} />
     <select value={f.company} onChange={(e) => set('company', e.target.value)} title="Parties with pending bills of this firm">
       <option value="">Company: All</option>
       {opts.companies.map((c) => <option key={c} value={c}>{c}</option>)}

@@ -107,12 +107,12 @@ export function sortVal(k, e, dir) {
 }
 
 // ---------- extra filters (beat / aging bucket / company / difference / commitment / PDC) ----------
-export const EMPTY_FILTERS = { beat: [], agingF: '', company: '', diffF: '', commitF: '', pdcF: '' } // beat = multi-select
+export const EMPTY_FILTERS = { beat: [], agingF: [], company: '', diffF: '', commitF: '', pdcF: '' } // beat/agingF = multi-select
 export function useExtraFilters() {
   const [f, setF] = useState(EMPTY_FILTERS)
   const set = (k, v) => setF((o) => ({ ...o, [k]: v }))
   const clear = () => setF(EMPTY_FILTERS)
-  const any = !!(f.beat.length || f.agingF || f.company || f.diffF || f.commitF || f.pdcF)
+  const any = !!(f.beat.length || f.agingF.length || f.company || f.diffF || f.commitF || f.pdcF)
   return { f, set, clear, any }
 }
 export function filterOptions(rows) {
@@ -124,7 +124,8 @@ export function filterOptions(rows) {
 export function applyExtraFilters(list, { beat, agingF, company, diffF, commitF, pdcF }) {
   const beats = Array.isArray(beat) ? beat : beat ? [beat] : []
   if (beats.length) list = list.filter((e) => beats.includes(String(e.p.beat || '').trim()))
-  if (agingF) list = list.filter((e) => Number(e.p.aging?.[agingF] || 0) > 0)
+  const ages = Array.isArray(agingF) ? agingF : agingF ? [agingF] : []
+  if (ages.length) list = list.filter((e) => ages.some((k) => Number(e.p.aging?.[k] || 0) > 0))
   if (company) list = list.filter((e) => firmsOf(e.p).includes(company))
   if (diffF) list = list.filter((e) => (Math.abs(agingDiff(e.p)) > 1) === (diffF === 'yes'))
   const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10) // IST
@@ -149,7 +150,8 @@ export function applyExtraFilters(list, { beat, agingF, company, diffF, commitF,
 const COMMIT_TXT = { has: 'has commitment', today: 'commit today', up: 'commit upcoming', due: 'commit date passed', none: 'no commitment' }
 const PDC_TXT = { has: 'has PDC', today: 'PDC today', up: 'PDC upcoming', due: 'PDC date passed', none: 'no PDC' }
 export function extraFilterText({ beat, agingF, company, diffF, commitF, pdcF }) {
-  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : '', COMMIT_TXT[commitF] || '', PDC_TXT[pdcF] || ''].filter(Boolean)
+  const ages = Array.isArray(agingF) ? agingF : agingF ? [agingF] : []
+  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), ages.length ? 'aging ' + ages.map((k) => (BUCKETS.find(([b]) => b === k) || [])[1] + 'd').join(' + ') : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : '', COMMIT_TXT[commitF] || '', PDC_TXT[pdcF] || ''].filter(Boolean)
 }
 
 // footer totals: jo parties filter me dikh rahi hain, unka column-wise jod (sirf number columns)
