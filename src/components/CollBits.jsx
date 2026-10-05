@@ -175,6 +175,22 @@ export function ExtraFilters({ opts, f, set, onDiffYes }) {
       <option value="">Company: All</option>
       {opts.companies.map((c) => <option key={c} value={c}>{c}</option>)}
     </select>
+    <select value={f.commitF} onChange={(e) => set('commitF', e.target.value)} title="Parties by payment commitment (promise) from follow-ups — filter karke print karo, salesman ko do">
+      <option value="">Commitment: All</option>
+      <option value="today">Commit today</option>
+      <option value="up">Commit upcoming</option>
+      <option value="due">Commit date passed</option>
+      <option value="has">Has commitment</option>
+      <option value="none">No commitment</option>
+    </select>
+    <select value={f.pdcF} onChange={(e) => set('pdcF', e.target.value)} title="Parties by post-dated cheque — PDC today = aaj lagne wale cheques">
+      <option value="">PDC: All</option>
+      <option value="today">PDC today</option>
+      <option value="up">PDC upcoming</option>
+      <option value="due">PDC date passed</option>
+      <option value="has">Has PDC</option>
+      <option value="none">No PDC</option>
+    </select>
     <select value={f.diffF} onChange={(e) => { set('diffF', e.target.value); if (e.target.value === 'yes') onDiffYes?.() }} title="Difference = Total Pending − Aging Total. 'Has difference' = money missing from the ERP aging report">
       <option value="">Difference: All</option>
       <option value="yes">Has difference</option>

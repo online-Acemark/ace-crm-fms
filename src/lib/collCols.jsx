@@ -18,23 +18,24 @@ export const COLS = [
   ...AGING_COLS,
   { key: 'aging_sum', label: 'Aging Total', sort: 'aging_sum', num: true, total: agingSum, title: 'Sum of all aging buckets' },
   { key: 'diff', label: 'Difference', sort: 'diff', num: true, total: agingDiff, title: 'Total Pending − Aging Total: money that is not in the ERP aging report' },
-  { key: 'credit_limit', label: 'Credit Limit', title: 'Credit limit given to the party and how much is used' },
-  { key: 'last_pay', label: 'Last Payment', title: 'Last receipt in ERP' },
+  { key: 'credit_limit', label: 'Credit Limit', sort: 'credit_limit', title: 'Credit limit given to the party and how much is used' },
+  { key: 'last_pay', label: 'Last Payment', sort: 'last_pay', title: 'Last receipt in ERP' },
   { key: 'next', label: 'Next F/Up', sort: 'next' },
   { key: 'flw', label: 'Follow-ups', sort: 'flw', title: 'How many times this party has been chased' },
-  { key: 'stage', label: 'Last Stage' },
+  { key: 'stage', label: 'Last Stage', sort: 'stage' },
   { key: 'committed', label: 'Committed', sort: 'committed' },
+  { key: 'commit_date', label: 'Commit Date', sort: 'commit_date', title: 'Promised payment date from the last commitment' },
   { key: 'remark', label: 'Last Remark' },
   { key: 'transfer', label: 'Transferred to' },
-  { key: 'city', label: 'City' }, { key: 'beat', label: 'Beat' },
+  { key: 'city', label: 'City', sort: 'city' }, { key: 'beat', label: 'Beat', sort: 'beat' },
 ]
 // Print panel ke quick presets: kaunse columns on rakhne hain
 export const COL_PRESETS = {
-  'Follow-up list': ['total_pending', 'oldest_od', 'company', 'next', 'flw', 'stage', 'committed', 'remark'],
+  'Follow-up list': ['total_pending', 'oldest_od', 'company', 'next', 'flw', 'stage', 'committed', 'commit_date', 'remark'],
   'Aging report': ['total_pending', 'company', ...AGING_COLS.map((c) => c.key), 'aging_sum', 'diff'],
   'Party master': ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'city', 'beat'],
 }
-export const COLL_DEFAULT_ON = ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'next', 'flw', 'stage', 'committed']
+export const COLL_DEFAULT_ON = ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'next', 'flw', 'stage', 'committed', 'commit_date']
 export const SALES_DEFAULT_ON = ['total_pending', 'oldest_od', 'aging', 'last_pay', 'next', 'stage', 'committed']
 
 const loadCols = (key) => { try { const v = JSON.parse(localStorage.getItem(key) || 'null'); if (v && typeof v === 'object') return v } catch { /* ignore */ } return {} }
@@ -72,6 +73,9 @@ export function cellOf(c, { p, ag, bucket, broken }) {
       ? <span className="small"><span className={`flw-pill ${ag.count >= 5 ? 'hi' : ''}`} title={`${ag.count} calls logged · ${ag.waCount} WhatsApp sent`}>{ag.count}x</span>{ag.last && <div className="muted">{dmy(ag.last.created_at)} · {userName(ag.last.created_by)}</div>}</span>
       : <span className="muted">—</span>
     case 'stage': return ag.lastStage ? <StageChip s={ag.lastStage} /> : <span className="muted">—</span>
+    case 'commit_date': return ag.committed?.date
+      ? <span className={broken ? 'red-t small' : 'small'}><b>{dmy(ag.committed.date)}</b>{broken && <div>💔 broken</div>}</span>
+      : <span className="muted">—</span>
     case 'committed': return ag.committed
       ? <span className={`small ${broken ? 'red-t' : ''}`}><b>{inr(ag.committed.amount)}</b><div className={broken ? 'red-t' : 'muted'}>{broken ? '💔 ' : 'by '}{dmy(ag.committed.date)}</div></span>
       : <span className="muted">—</span>
@@ -92,19 +96,23 @@ export function sortVal(k, e, dir) {
     : k === 'flw' ? e.ag.count
     : k === 'next' ? (e.p.next_followup_date ? new Date(e.p.next_followup_date).getTime() : (dir === 'desc' ? -1 : 9e15))
     : k === 'committed' ? (e.ag.committed?.amount || 0)
+    : k === 'commit_date' ? (e.ag.committed?.date ? new Date(e.ag.committed.date).getTime() : (dir === 'desc' ? -1 : 9e15))
+    : k === 'last_pay' ? Number(e.ag.receipts?.[0]?.amount ?? e.p.last_pay_amt ?? 0)
+    : k === 'stage' ? String(e.ag.lastStage || '')
+    : (k === 'city' || k === 'beat') ? String(e.p[k] || '')
     : k === 'aging_sum' ? agingSum(e.p)
     : k === 'diff' ? agingDiff(e.p)
     : k.startsWith('ag_') ? Number(e.p.aging?.[k.slice(3)] || 0)
     : Number(e.p[k] || 0)
 }
 
-// ---------- extra filters (beat / aging bucket / company / difference) ----------
-export const EMPTY_FILTERS = { beat: [], agingF: '', company: '', diffF: '' } // beat = multi-select
+// ---------- extra filters (beat / aging bucket / company / difference / commitment / PDC) ----------
+export const EMPTY_FILTERS = { beat: [], agingF: '', company: '', diffF: '', commitF: '', pdcF: '' } // beat = multi-select
 export function useExtraFilters() {
   const [f, setF] = useState(EMPTY_FILTERS)
   const set = (k, v) => setF((o) => ({ ...o, [k]: v }))
   const clear = () => setF(EMPTY_FILTERS)
-  const any = !!(f.beat.length || f.agingF || f.company || f.diffF)
+  const any = !!(f.beat.length || f.agingF || f.company || f.diffF || f.commitF || f.pdcF)
   return { f, set, clear, any }
 }
 export function filterOptions(rows) {
@@ -113,17 +121,35 @@ export function filterOptions(rows) {
     companies: [...new Set((rows || []).flatMap((p) => firmsOf(p)))].sort(),
   }
 }
-export function applyExtraFilters(list, { beat, agingF, company, diffF }) {
+export function applyExtraFilters(list, { beat, agingF, company, diffF, commitF, pdcF }) {
   const beats = Array.isArray(beat) ? beat : beat ? [beat] : []
   if (beats.length) list = list.filter((e) => beats.includes(String(e.p.beat || '').trim()))
   if (agingF) list = list.filter((e) => Number(e.p.aging?.[agingF] || 0) > 0)
   if (company) list = list.filter((e) => firmsOf(e.p).includes(company))
   if (diffF) list = list.filter((e) => (Math.abs(agingDiff(e.p)) > 1) === (diffF === 'yes'))
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10) // IST
+  if (commitF) list = list.filter((e) => {
+    const d = e.ag.committed?.date ? String(e.ag.committed.date).slice(0, 10) : null
+    if (commitF === 'has') return !!d
+    if (commitF === 'none') return !d
+    if (!d) return false
+    return commitF === 'today' ? d === today : commitF === 'up' ? d > today : d < today // 'due' = date nikal gayi
+  })
+  if (pdcF) list = list.filter((e) => {
+    // party ke bills me jitne PDC (cheque) hain unki dates — koi EK bhi range me ho to match
+    const dates = (e.p.bills || []).map((b) => b.pdc_date).filter(Boolean).map((d) => String(d).slice(0, 10))
+    const has = e.p.has_pdc || dates.length > 0
+    if (pdcF === 'has') return has
+    if (pdcF === 'none') return !has
+    return pdcF === 'today' ? dates.some((d) => d === today) : pdcF === 'up' ? dates.some((d) => d > today) : dates.some((d) => d < today)
+  })
   return list
 }
 // print header ke liye: lage hue filters ek line me
-export function extraFilterText({ beat, agingF, company, diffF }) {
-  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : ''].filter(Boolean)
+const COMMIT_TXT = { has: 'has commitment', today: 'commit today', up: 'commit upcoming', due: 'commit date passed', none: 'no commitment' }
+const PDC_TXT = { has: 'has PDC', today: 'PDC today', up: 'PDC upcoming', due: 'PDC date passed', none: 'no PDC' }
+export function extraFilterText({ beat, agingF, company, diffF, commitF, pdcF }) {
+  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), agingF ? 'aging ' + (BUCKETS.find(([k]) => k === agingF) || [])[1] + 'd' : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : '', COMMIT_TXT[commitF] || '', PDC_TXT[pdcF] || ''].filter(Boolean)
 }
 
 // footer totals: jo parties filter me dikh rahi hain, unka column-wise jod (sirf number columns)
