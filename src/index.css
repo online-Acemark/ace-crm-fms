@@ -810,10 +810,14 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
   /* Collection print = sirf table (+ ek line header): title, KPI, pulse, filters, chips, "Start here" sab chhupao */
   .coll-page .action-head, .coll-page .nextup { display: none !important; }
 
-  /* lambi list dusre page par jaye to har page par TABLE HEADING repeat ho */
-  thead { display: table-header-group; }
-  tfoot { display: table-row-group; }
+  /* lambi list dusre page par jaye to har page par TABLE HEADING repeat ho.
+     NOTE: sticky thead print me repeat todta hai — isliye static zaroori */
+  thead { display: table-header-group !important; }
+  tfoot { display: table-row-group !important; }
+  thead th { position: static !important; box-shadow: none !important; }
+  .coll-tbl thead th { position: static !important; }
   tr { break-inside: avoid; page-break-inside: avoid; }
+  table { border-collapse: collapse; }
 
   /* Party ka modal khula ho to print = SIRF modal (bill detail) — list nahi */
   body:has(.coll-modal) .coll-page > *:not(.modal-back),
