@@ -260,8 +260,9 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
   // paid state: 'erp' = ERP Full (ERP list se agle sync me hatega) | 'claimed' = note me received likha, ERP me abhi nahi
   const paidState = (b) => b.pay_status === 'Full' ? 'erp' : ag.paid.has(b.vno) ? 'claimed' : ''
   const paidN = baseBills.filter((b) => paidState(b)).length
+  // "All bills" = SACH ME saare (paid bhi) — OD only me paid default chhupe (checkbox se dikhte hain)
   const shownBills = baseBills.filter((b) =>
-    (showPaid || !paidState(b)) &&
+    (showAll || showPaid || !paidState(b)) &&
     (!fFirms.length || fFirms.includes(String(b.company || '').trim())) &&
     (!fAges.length || ((b.od || 0) > 0 && fAges.includes(ageBucket(b.od)))) &&
     (!fPdc || (fPdc === 'none' ? !hasPdc(b) : hasPdc(b) && b.pdc_date && (fPdc === 'today' ? b.pdc_date === today : fPdc === 'up' ? b.pdc_date > today : b.pdc_date < today))))
@@ -355,7 +356,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
             <select value={fPdc} onChange={(e) => setFPdc(e.target.value)} title="Filter by post-dated cheque date">
               <option value="">PDC: All</option><option value="today">PDC today</option><option value="up">PDC upcoming</option><option value="due">PDC date passed</option><option value="none">No PDC</option>
             </select>
-            {paidN > 0 && <label className="small chk"><input type="checkbox" checked={showPaid} onChange={(e) => setShowPaid(e.target.checked)} /> Show {paidN} paid / claimed</label>}
+            {!showAll && paidN > 0 && <label className="small chk"><input type="checkbox" checked={showPaid} onChange={(e) => setShowPaid(e.target.checked)} /> Show {paidN} paid / claimed</label>}
             {filtersOn && <>
               <button className="btn ghost sm" onClick={() => { setFFirms([]); setFAges([]); setFPdc('') }}>✕ Clear</button>
               <span className="filter-count active">🔎 {shownBills.length} / {baseBills.length}</span>
