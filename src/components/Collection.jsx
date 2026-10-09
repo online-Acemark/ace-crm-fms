@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
-import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, pdcAmtText, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, COLL_DEFAULT_ON, useColVis, cellOf, sortVal, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -253,7 +253,9 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
   const [showAll, setShowAll] = useState(false) // false = sirf overdue; true = party ke SAARE pending bills
   const AGE_OPTS = ['1-30', '31-60', '61-90', '91-120', '121-150', '151-180', '180+']
   const ageBucket = (od) => od <= 30 ? '1-30' : od <= 60 ? '31-60' : od <= 90 ? '61-90' : od <= 120 ? '91-120' : od <= 150 ? '121-150' : od <= 180 ? '151-180' : '180+'
-  const baseBills = showAll ? (p.bills || []) : overdueBills
+  // OD only = overdue bills + jin bills par PDC (cheque) mila hai — cheque aksar due se PEHLE milta hai,
+  // isliye wo bill overdue nahi hota; par cheque ki date/amount dikhna zaroori hai
+  const baseBills = showAll ? (p.bills || []) : (p.bills || []).filter((b) => (b.od || 0) > 0 || b.pdc_rcpt || b.pdc_date)
   const firmOpts = [...new Set(baseBills.map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
   const today = isoDay()
   const hasPdc = (b) => !!(b.pdc_rcpt || b.pdc_date)
@@ -346,7 +348,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
         <div className="coll-bills">
           <div className="coll-bill-filters">
             <div className="coll-presets">
-              <button className={!showAll ? 'preset-chip active' : 'preset-chip'} title="Sirf overdue bills" onClick={() => setShowAll(false)}>OD only ({overdueBills.length})</button>
+              <button className={!showAll ? 'preset-chip active' : 'preset-chip'} title="Overdue bills + bills with a PDC (cheque)" onClick={() => setShowAll(false)}>OD + PDC ({(p.bills || []).filter((b) => (b.od || 0) > 0 || b.pdc_rcpt || b.pdc_date).length})</button>
               <button className={showAll ? 'preset-chip active' : 'preset-chip'} title="Party ke saare pending bills — jo abhi due nahi hue wo bhi" onClick={() => setShowAll(true)}>All bills ({(p.bills || []).length})</button>
             </div>
             <span className="muted small">Click 📝 on a bill to note a call about it, or tick several bills.{hotN > 0 && <span className="hot-lgd">{hotN} bill{hotN > 1 ? 's' : ''} 60+ days overdue</span>}</span>
@@ -387,7 +389,7 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
                         : <span className="muted small">{b.days != null ? (b.vno ? `${b.days} days (not due yet)` : `${b.days} days old`) : '—'}</span>}</td>
                       <td className="num"><b>{inr(b.pending ?? b.amt)}</b>{b.pay_status === 'Part' && b.still_pending != null && Math.round(b.still_pending) !== Math.round(b.pending ?? b.amt) && <div className="muted small">ERP: {inr(b.still_pending)}</div>}</td>
                       <td onClick={(e) => e.stopPropagation()}>{erpCell(b)}</td>
-                      <td className="small">{hasPdc(b) ? <span className={b.pdc_date && b.pdc_date < today ? 'red-t' : b.pdc_date === today ? 'amber-t' : ''}>✅ {b.pdc_rcpt || ''} {dmy(b.pdc_date)}</span> : '—'}</td>
+                      <td className="small">{hasPdc(b) ? <span className={b.pdc_date && b.pdc_date < today ? 'red-t' : b.pdc_date === today ? 'amber-t' : ''}>🧾 <b>{pdcAmtText(b.pdc_rcpt)}</b> · {dmy(b.pdc_date)}</span> : '—'}</td>
                       <td className="small">{b.bilty || '—'}</td>
                       <td className="small coll-notes" title={b.notes || ''}>{b.notes || '—'}</td>
                       <td className="no-print" onClick={(e) => e.stopPropagation()}>{b.vno && <button className="btn ghost sm" title={`Follow-up note for ${b.vno}`} onClick={() => openForm([b.vno])}>📝</button>}</td>

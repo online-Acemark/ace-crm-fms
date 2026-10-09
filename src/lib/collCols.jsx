@@ -1,7 +1,7 @@
 // Collection + My Parties ka shared table setup: columns, column picker state, filters, totals, print.
 // (Sirf non-component exports — components CollBits.jsx me hain, fast-refresh ke liye.)
 import { useMemo, useState } from 'react'
-import { inr, dmy, userName, BUCKETS, agingSum, agingDiff, firmsOf } from './coll'
+import { inr, dmy, userName, BUCKETS, agingSum, agingDiff, firmsOf, pdcList, pdcAmtText, isoDay } from './coll'
 import { AgingChips, LimitBar, StageChip, BucketPill, FirmChips } from '../components/CollBits'
 
 // aging column ka rang: pehle 2 buckets green, agle 2 amber, baaki red (AgingChips jaisa)
@@ -25,18 +25,19 @@ export const COLS = [
   { key: 'stage', label: 'Last Stage', sort: 'stage' },
   { key: 'committed', label: 'Committed', sort: 'committed' },
   { key: 'commit_date', label: 'Commit Date', sort: 'commit_date', title: 'Promised payment date from the last commitment' },
+  { key: 'pdc', label: 'PDC', sort: 'pdc', num: true, title: 'Post-dated cheques from ERP: amount + cheque date (red = date passed, amber = today)', total: (p) => pdcList(p).reduce((a, c) => a + c.amt, 0) },
   { key: 'remark', label: 'Last Remark' },
   { key: 'transfer', label: 'Transferred to' },
   { key: 'city', label: 'City', sort: 'city' }, { key: 'beat', label: 'Beat', sort: 'beat' },
 ]
 // Print panel ke quick presets: kaunse columns on rakhne hain
 export const COL_PRESETS = {
-  'Follow-up list': ['total_pending', 'oldest_od', 'company', 'next', 'flw', 'stage', 'committed', 'commit_date', 'remark'],
+  'Follow-up list': ['total_pending', 'oldest_od', 'company', 'next', 'flw', 'stage', 'committed', 'commit_date', 'pdc', 'remark'],
   'Aging report': ['total_pending', 'company', ...AGING_COLS.map((c) => c.key), 'aging_sum', 'diff'],
   'Party master': ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'city', 'beat'],
 }
-export const COLL_DEFAULT_ON = ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'next', 'flw', 'stage', 'committed', 'commit_date']
-export const SALES_DEFAULT_ON = ['total_pending', 'oldest_od', 'aging', 'last_pay', 'next', 'stage', 'committed']
+export const COLL_DEFAULT_ON = ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'next', 'flw', 'stage', 'committed', 'commit_date', 'pdc']
+export const SALES_DEFAULT_ON = ['total_pending', 'oldest_od', 'aging', 'last_pay', 'next', 'stage', 'committed', 'pdc']
 
 const loadCols = (key) => { try { const v = JSON.parse(localStorage.getItem(key) || 'null'); if (v && typeof v === 'object') return v } catch { /* ignore */ } return {} }
 // column on/off state (localStorage me yaad rehta hai) — Collection aur My Parties apni-apni key se
@@ -73,6 +74,22 @@ export function cellOf(c, { p, ag, bucket, broken }, xfF) {
       ? <span className="small"><span className={`flw-pill ${ag.count >= 5 ? 'hi' : ''}`} title={`${ag.count} calls logged · ${ag.waCount} WhatsApp sent`}>{ag.count}x</span>{ag.last && <div className="muted">{dmy(ag.last.created_at)} · {userName(ag.last.created_by)}</div>}</span>
       : <span className="muted">—</span>
     case 'stage': return ag.lastStage ? <StageChip s={ag.lastStage} /> : <span className="muted">—</span>
+    case 'pdc': {
+      const list = pdcList(p)
+      if (!list.length) return <span className="muted">—</span>
+      const today = isoDay()
+      const tot = list.reduce((a, c) => a + c.amt, 0)
+      return (
+        <span className="small" title={list.map((c) => `${pdcAmtText(c.raw)} · ${dmy(c.date)}`).join('\n')}>
+          {list.slice(0, 2).map((c, i) => (
+            <div key={i} className={c.date && c.date < today ? 'red-t' : c.date === today ? 'amber-t' : ''}>
+              🧾 <b>{pdcAmtText(c.raw)}</b> · {dmy(c.date)}
+            </div>
+          ))}
+          {list.length > 2 && <div className="muted">+{list.length - 2} more · total {inr(tot)}</div>}
+        </span>
+      )
+    }
     case 'commit_date': return ag.committed?.date
       ? <span className={broken ? 'red-t small' : 'small'}><b>{dmy(ag.committed.date)}</b>{broken && <div>💔 broken</div>}</span>
       : <span className="muted">—</span>
@@ -97,6 +114,7 @@ export function sortVal(k, e, dir) {
     : k === 'next' ? (e.p.next_followup_date ? new Date(e.p.next_followup_date).getTime() : (dir === 'desc' ? -1 : 9e15))
     : k === 'committed' ? (e.ag.committed?.amount || 0)
     : k === 'commit_date' ? (e.ag.committed?.date ? new Date(e.ag.committed.date).getTime() : (dir === 'desc' ? -1 : 9e15))
+    : k === 'pdc' ? (() => { const d = pdcList(e.p).find((c) => c.date)?.date; return d ? new Date(d).getTime() : (dir === 'desc' ? -1 : 9e15) })()
     : k === 'last_pay' ? Number(e.ag.receipts?.[0]?.amount ?? e.p.last_pay_amt ?? 0)
     : k === 'stage' ? String(e.ag.lastStage || '')
     : (k === 'city' || k === 'beat') ? String(e.p[k] || '')

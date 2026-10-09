@@ -31,6 +31,22 @@ export const dmyt = (v) => v ? new Date(v).toLocaleString('en-IN', { day: '2-dig
 export const pad = (n) => String(n).padStart(2, '0')
 export const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 export const toLocalInput = (dt) => `${isoDay(dt)}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+
+// ERP pdc_rcpt me cheque ka AMOUNT aata hai (kabhi receipt no. jaisa text) — number ho to ₹ format
+export const pdcAmtText = (v) => { const n = Number(String(v ?? '').replace(/,/g, '')); return v != null && v !== '' && !isNaN(n) ? inr(n) : String(v || '') }
+
+// Party ke distinct PDC cheques: ek cheque kai bills cover karta hai to har bill par repeat aata hai —
+// (date + amount) se dedupe, date ke hisaab se sorted
+export function pdcList(p) {
+  const seen = new Map()
+  for (const b of (p?.bills || [])) {
+    if (!b.pdc_date && !b.pdc_rcpt) continue
+    const date = b.pdc_date ? String(b.pdc_date).slice(0, 10) : ''
+    const k = `${date}|${b.pdc_rcpt || ''}`
+    if (!seen.has(k)) seen.set(k, { date, raw: b.pdc_rcpt, amt: Number(String(b.pdc_rcpt ?? '').replace(/,/g, '')) || 0 })
+  }
+  return [...seen.values()].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'))
+}
 export const startOfDay = (v) => { const d = new Date(v); d.setHours(0, 0, 0, 0); return d }
 // kitne din baad/pehle (date-only): -1 = kal beet gaya, 0 = aaj, 1 = kal
 export const dayDiff = (v) => Math.round((startOfDay(v) - startOfDay(new Date())) / 864e5)
