@@ -12,6 +12,8 @@ import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chi
 // Google login -> ERP salesman name. Pehle admin mapping (fms_users.salesman), warna naam / email se auto-match.
 const tok = (s) => normKey(s).replace(/[^a-z0-9 ]/g, ' ').split(' ').filter(Boolean)
 function resolveSalesman(user, access, salesmen) {
+  // '*' = CRM / office login: kisi ek salesman se nahi juda, sabki parties dekhta hai
+  if (access?.salesman === '*') return { name: '*', how: 'all salesmen — set by admin' }
   if (access?.salesman) return { name: access.salesman, how: 'set by admin' }
   const cands = [access?.full_name, user?.user_metadata?.full_name, user?.user_metadata?.name].filter(Boolean)
   // 1) poora naam same (case / dots ignore)
@@ -272,16 +274,16 @@ export default function Salesman({ user, access }) {
           <div>
             <h2>🧑‍💼 My Parties {me && <span className="muted" style={{ fontWeight: 400, fontSize: 15 }}>— {allView ? 'all salesmen' : me}</span>}</h2>
             {allView
-              ? <p className="muted small">Super admin view — every salesman's parties. Pick a salesman to see only theirs.</p>
+              ? <p className="muted small">{isAdmin ? 'Super admin' : 'CRM'} view — every salesman's parties. Pick a salesman to see only theirs.</p>
               : me
                 ? <p className="muted small">Parties under <b>{me}</b>{resolved && !viewAs ? ` (${resolved.how})` : ''}, plus any transferred to you. Most important on top — call, then save the party's commitment.</p>
                 : <p className="muted small">Your login is not linked to a salesman name.</p>}
           </div>
           <span className="coll-tools">
-          {(isAdmin || !resolved) && salesmen.length > 0 && (
-            <label className="small muted" style={{ whiteSpace: 'nowrap' }}>{isAdmin ? 'Salesman' : 'Preview as'}
+          {(isAdmin || !resolved || resolved.name === ALL) && salesmen.length > 0 && (
+            <label className="small muted" style={{ whiteSpace: 'nowrap' }}>{isAdmin || resolved?.name === ALL ? 'Salesman' : 'Preview as'}
               <select value={viewAs} onChange={(e) => { setViewAs(e.target.value); setOpen(null) }} style={{ marginLeft: 6 }}>
-                <option value="">{isAdmin ? 'All salesmen' : resolved ? `me (${resolved.name})` : '— pick —'}</option>
+                <option value="">{isAdmin || resolved?.name === ALL ? 'All salesmen' : '— pick —'}</option>
                 {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>

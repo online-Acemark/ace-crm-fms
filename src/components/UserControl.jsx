@@ -113,8 +113,9 @@ export default function UserControl({ myEmail, onChanged }) {
                 <td>
                   <select value={u.salesman || ''} onChange={(e) => setSalesman(u, e.target.value)} title="Blank = auto-match by name">
                     <option value="">auto (by name)</option>
+                    <option value="*">★ All salesmen (CRM / office)</option>
                     {salesmen.map((s) => <option key={s} value={s}>{s}</option>)}
-                    {u.salesman && !salesmen.includes(u.salesman) && <option value={u.salesman}>{u.salesman}</option>}
+                    {u.salesman && u.salesman !== '*' && !salesmen.includes(u.salesman) && <option value={u.salesman}>{u.salesman}</option>}
                   </select>
                 </td>
                 <td className="uc-chk"><input type="checkbox" checked={!!u.is_admin} onChange={(e) => setAdmin(u, e.target.checked)} /></td>
