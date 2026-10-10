@@ -16,6 +16,17 @@ const sb = async (path: string, init: RequestInit = {}) => {
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
 };
+// API ek request me max 1000 rows deti hai — badi tables page-by-page (path me order= zaroor ho)
+const sbAll = async (path: string) => {
+  const out: any[] = [];
+  for (let off = 0; ; off += 1000) {
+    const page = await sb(`${path}${path.includes("?") ? "&" : "?"}limit=1000&offset=${off}`);
+    if (!page?.length) break;
+    out.push(...page);
+    if (page.length < 1000) break;
+  }
+  return out;
+};
 
 const d = (v: unknown) => {
   if (!v) return null;
@@ -83,7 +94,7 @@ Deno.serve(async (req) => {
 
     if (mode === "dispatch") {
       // BILL-WISE (app ke Today Work jaisa): bill bana par nikla nahi — har bill apni line; hold wale bahar
-      const orders = await sb("fms_orders?select=mobile_so_no,account_name,salesman,billing_date,desp_date,bill_net_amount,sorder_amount,on_hold,bills,products,bills_payment&desp_date=is.null&cancelled=eq.false&on_hold=not.is.true");
+      const orders = await sbAll("fms_orders?select=mobile_so_no,account_name,salesman,billing_date,desp_date,bill_net_amount,sorder_amount,on_hold,bills,products,bills_payment&desp_date=is.null&cancelled=eq.false&on_hold=not.is.true&order=mobile_so_no");
       const due: any[] = [];
       for (const o of orders) {
         const bs = billsOf(o).filter((b) => b.status !== "dispatched");
@@ -106,10 +117,10 @@ Deno.serve(async (req) => {
 
     // mode=instant
     const [orders, wd, hd, log] = await Promise.all([
-      sb("fms_orders?select=mobile_so_no,account_name,mobile_no,salesman,mobile_so_created,so_convert_date,sorder_amount,mobile_so_amount&cancelled=eq.false"),
-      sb("working_day_calender?select=working_date"),
+      sbAll("fms_orders?select=mobile_so_no,account_name,mobile_no,salesman,mobile_so_created,so_convert_date,sorder_amount,mobile_so_amount&cancelled=eq.false&order=mobile_so_no"),
+      sbAll("working_day_calender?select=working_date&order=working_date"),
       sb("holidays?select=holiday_date"),
-      sb("fms_alert_log?select=so_no,alert_type"),
+      sbAll("fms_alert_log?select=so_no,alert_type&order=so_no,alert_type"),
     ]);
     const hset = new Set((hd || []).map((r: any) => r.holiday_date));
     workingDaySet = new Set((wd || []).map((r: any) => r.working_date).filter((x: string) => !hset.has(x)));

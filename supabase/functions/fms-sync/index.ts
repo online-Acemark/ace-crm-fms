@@ -25,6 +25,17 @@ const sb = async (path: string, init: RequestInit = {}) => {
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
 };
+// API ek request me max 1000 rows deti hai — badi tables page-by-page (path me order= zaroor ho)
+const sbAll = async (path: string) => {
+  const out: any[] = [];
+  for (let off = 0; ; off += 1000) {
+    const page = await sb(`${path}${path.includes("?") ? "&" : "?"}limit=1000&offset=${off}`);
+    if (!page?.length) break;
+    out.push(...page);
+    if (page.length < 1000) break;
+  }
+  return out;
+};
 
 // DB ke timestamptz (Z/+00 wale) IST frame me shift; ERP ke naked strings waise hi (env UTC me wall-clock ban jate hain)
 const d = (v: unknown) => {
@@ -326,9 +337,9 @@ Deno.serve(async () => {
       sb("fms_stage_config?select=*&order=sort_order"),
       sb("fms_settings?key=eq.scoring&select=value"),
       sb("fms_settings?key=eq.erp&select=value"),
-      sb("working_day_calender?select=working_date"),
+      sbAll("working_day_calender?select=working_date&order=working_date"),
       sb("holidays?select=holiday_date"),
-      sb("fms_orders?select=mobile_so_no,payment_complete,payment_date,billing_date"),
+      sbAll("fms_orders?select=mobile_so_no,payment_complete,payment_date,billing_date&order=mobile_so_no"),
     ]);
     const scoring = scoringRow?.[0]?.value || {};
     const erpCfg = erpRow?.[0]?.value || {};

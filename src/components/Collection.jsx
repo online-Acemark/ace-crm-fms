@@ -477,7 +477,7 @@ export default function Collection() {
       return
     }
     Promise.all([
-      supabase.from('fms_collection').select('*'),
+      fetchAll('fms_collection', '*', (x) => x.order('party_name')).then((data) => ({ data })),
       fetchAll('fms_followups', FUP_COLS, (x) => x.not('party_name', 'is', null).order('created_at', { ascending: false })),
       fetchAll('fms_receipts', RCPT_COLS, (x) => x.order('pay_date', { ascending: false, nullsFirst: false })),
     ]).then(([{ data }, f, r]) => { setRows(data || []); setFups(f); setRcpts(r) })

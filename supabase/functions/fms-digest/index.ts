@@ -11,6 +11,17 @@ const sb = async (path: string) => {
   if (!res.ok) throw new Error(`${path} -> ${res.status}: ${await res.text()}`);
   return res.json();
 };
+// API ek request me max 1000 rows deti hai — badi tables page-by-page (path me order= zaroor ho)
+const sbAll = async (path: string) => {
+  const out: any[] = [];
+  for (let off = 0; ; off += 1000) {
+    const page = await sb(`${path}${path.includes("?") ? "&" : "?"}limit=1000&offset=${off}`);
+    if (!page?.length) break;
+    out.push(...page);
+    if (page.length < 1000) break;
+  }
+  return out;
+};
 
 const d = (v: unknown) => {
   if (!v) return null;
@@ -48,7 +59,7 @@ Deno.serve(async () => {
       return new Response(JSON.stringify({ ok: false, error: "fms_settings me key='telegram' set karo: { token, chat_id }" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    const orders = await sb("fms_orders?select=mobile_so_no,account_name,mobile_no,acc_family,salesman,so_convert_date,billing_date,desp_date,credit_days,bill_net_amount,sorder_amount,payment_complete,next_followup_date,mobile_so_created,pay_status,payment_pending_erp,on_hold,bills,products,bills_payment&cancelled=eq.false");
+    const orders = await sbAll("fms_orders?select=mobile_so_no,account_name,mobile_no,acc_family,salesman,so_convert_date,billing_date,desp_date,credit_days,bill_net_amount,sorder_amount,payment_complete,next_followup_date,mobile_so_created,pay_status,payment_pending_erp,on_hold,bills,products,bills_payment&cancelled=eq.false&order=mobile_so_no");
     const now = nowIST();
     const noFup = (o: any) => String(o.acc_family || "").trim().toUpperCase() === "N";
     const paid = (o: any) => o.payment_complete || o.pay_status === "Full";
@@ -137,7 +148,7 @@ Deno.serve(async () => {
     // ---- pura ledger outstanding (fms_collection se) + Collection follow-up system ----
     let collCounts: Record<string, number> = {};
     try {
-      const col = await sb("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging,next_followup_date,permanent_note");
+      const col = await sbAll("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging,next_followup_date,permanent_note&order=party_name");
       if (col?.length) {
         const live = col.filter((p: any) => !p.permanent_note);   // permanent note = worklist se bahar
         const tot = live.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
@@ -180,7 +191,7 @@ Deno.serve(async () => {
         // kal ERP me kitna paisa aaya (fms_receipts = Payment.ashx voucher-wise)
         let yErp = 0, yErpN = 0;
         try {
-          const rc = await sb(`fms_receipts?select=amount&pay_date=eq.${yISO}`);
+          const rc = await sbAll(`fms_receipts?select=amount&pay_date=eq.${yISO}&order=pay_vno`);
           for (const r of rc || []) { yErp += Number(r.amount || 0); yErpN++; }
         } catch (_e) { /* receipts table na ho to skip */ }
         const missed: any[] = [], dueToday: any[] = [], broken: any[] = [];

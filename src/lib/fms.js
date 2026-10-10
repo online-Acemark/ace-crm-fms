@@ -516,9 +516,16 @@ export async function syncOrders(stages, scoring, onMsg) {
   onMsg?.(`${raw.length} lines mile — aggregate ho raha hai…`)
   const aggregated = aggregateSO(raw)
   // preserve app-side fields: fetch existing payment/custom info
-  const { data: existing } = await supabase.from('fms_orders')
-    .select('mobile_so_no,payment_complete,payment_date')
-  const exMap = new Map((existing || []).map((e) => [e.mobile_so_no, e]))
+  // page-by-page: API ek baar me max 1000 rows deti hai, table usse badi hai
+  const existing = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase.from('fms_orders')
+      .select('mobile_so_no,payment_complete,payment_date').order('mobile_so_no').range(from, from + 999)
+    if (error || !data?.length) break
+    existing.push(...data)
+    if (data.length < 1000) break
+  }
+  const exMap = new Map(existing.map((e) => [e.mobile_so_no, e]))
   const payload = aggregated.map((o) => {
     const ex = exMap.get(o.mobile_so_no)
     const merged = { ...o, payment_complete: ex?.payment_complete || false, payment_date: ex?.payment_date || null }

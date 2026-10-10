@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from './lib/supabase'
 import { syncOrders, loadWorkingDays, loadStock } from './lib/fms'
+import { fetchAll } from './lib/coll'
 import Grid from './components/Grid'
 import ActionCenter from './components/ActionCenter'
 import Scoreboard from './components/Scoreboard'
@@ -89,14 +90,16 @@ export default function App() {
       setScoring({ on_time_points: 100, grace_hours: 1, penalty_per_hour: 2, min_points: 0 })
       return
     }
-    const [o, s, set, f, pi] = await Promise.all([
+    // Supabase API ek request me max 1000 rows deti hai — badi tables fetchAll se page-by-page
+    const [oRows, s, set, fRows, pi] = await Promise.all([
       // cancelled = ERP feed se hataye gaye orders — app me nahi dikhte (DB me history padi hai)
-      supabase.from('fms_orders').select('*').eq('cancelled', false).order('mobile_so_created', { ascending: false }),
+      fetchAll('fms_orders', '*', (q) => q.eq('cancelled', false).order('mobile_so_created', { ascending: false }).order('mobile_so_no')),
       supabase.from('fms_stage_config').select('*').order('sort_order'),
       supabase.from('fms_settings').select('*').eq('key', 'scoring').maybeSingle(),
-      supabase.from('fms_followups').select('mobile_so_no,remarks,created_at').order('created_at', { ascending: true }),
+      fetchAll('fms_followups', 'mobile_so_no,remarks,created_at', (q) => q.not('mobile_so_no', 'is', null).order('created_at', { ascending: true }).order('id')),
       supabase.from('fms_party_info').select('*'),
     ])
+    const o = { data: oRows }, f = { data: fRows }
     setOrders(o.data || [])
     setStages(s.data || [])
     setScoring(set.data?.value || {})
