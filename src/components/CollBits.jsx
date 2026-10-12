@@ -1,6 +1,6 @@
 // Collection / My Parties shared UI bits: aging chips, limit bar, stage/bucket pills, timeline, ERP receipts.
 import { useState } from 'react'
-import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, dmy, dmyt, userName, avaColor, initials, firmsOf, firmShort } from '../lib/coll'
+import { BUCKETS, STAGE_CLS, BUCKET_LABEL, BUCKET_CLS, inr, dmy, dmyt, userName, avaColor, initials, firmsOf, firmShort, ledgerDiff, diffReason } from '../lib/coll'
 import MultiSelect from './MultiSelect'
 
 export function AgingChips({ aging }) {
@@ -103,6 +103,7 @@ export function PartyCell({ p, ag, showSalesman = true, me = '' }) {
           {meta}{meta && p.mobile ? ' · ' : ''}{p.mobile && <a href={`tel:${p.mobile}`} onClick={(e) => e.stopPropagation()}>{p.mobile}</a>}
           {p.has_pdc && <span className="tag tag-pdc">🧾 PDC</span>}
           {p.permanent_note && <span className="tag tag-stop" title={'No follow-up: ' + p.permanent_note}>🚫 No follow-up</span>}
+          {ledgerDiff(p) !== 0 && <span className="tag tag-diff" title={diffReason(p)}>⚖ Check ledger</span>}
           {ag?.transferTo && <span className="tag tag-xfer" title={'Transferred: ' + (ag.transferReason || '')}>↪ {me && ag.transferTo === me ? 'to you' : ag.transferTo}</span>}
         </div>
       </div>
@@ -163,8 +164,8 @@ export const Skeleton = ({ rows = 6 }) => (
   <div className="skel-wrap">{Array.from({ length: rows }).map((_, i) => <div key={i} className="skel" style={{ width: `${70 + ((i * 13) % 30)}%` }} />)}</div>
 )
 
-// Toolbar ke extra filters: Beat / Aging bucket / Company / Difference (Collection + My Parties dono me)
-export function ExtraFilters({ opts, f, set, onDiffYes }) {
+// Toolbar ke extra filters: Beat / Aging bucket / Company / Commitment / PDC (Collection + My Parties dono me)
+export function ExtraFilters({ opts, f, set }) {
   return (<>
     <MultiSelect label="Beat" options={opts.beats} value={f.beat} onChange={(v) => set('beat', v)} />
     <MultiSelect label="Aging" options={BUCKETS.map(([k, l]) => ({ key: k, label: l + ' days' }))} value={Array.isArray(f.agingF) ? f.agingF : []} onChange={(v) => set('agingF', v)} />
@@ -187,11 +188,6 @@ export function ExtraFilters({ opts, f, set, onDiffYes }) {
       <option value="due">PDC date passed</option>
       <option value="has">Has PDC</option>
       <option value="none">No PDC</option>
-    </select>
-    <select value={f.diffF} onChange={(e) => { set('diffF', e.target.value); if (e.target.value === 'yes') onDiffYes?.() }} title="Difference = Total Pending − Aging Total. 'Has difference' = money missing from the ERP aging report">
-      <option value="">Difference: All</option>
-      <option value="yes">Has difference</option>
-      <option value="no">No difference</option>
     </select>
   </>)
 }

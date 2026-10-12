@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
-import { inr, inrShort, dmy, isoDay, normKey, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, normKey, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, SALES_DEFAULT_ON, useColVis, cellOf, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -192,7 +192,7 @@ export default function Salesman({ user, access }) {
   const [chip, setChip] = useState('all')
   const [open, setOpen] = useState(null)
   const [viewAs, setViewAs] = useState('')   // admin: kisi bhi salesman ki nazar se dekho
-  const xf = useExtraFilters()               // beat / aging bucket / company / difference
+  const xf = useExtraFilters()               // beat / aging bucket / company / commitment / PDC
   const cols = useColVis('fms_sales_cols', SALES_DEFAULT_ON)
   const [colPanel, setColPanel] = useState(false)   // false | 'cols' | 'print'
   const [toast, setToast] = useState('')
@@ -219,7 +219,7 @@ export default function Salesman({ user, access }) {
   const allView = me === ALL
 
   const enriched = useMemo(() => (rows || [])
-    .filter((p) => me && !p.permanent_note && (allView || p.salesman === me || agOf(p).transferTo === me))
+    .filter((p) => me && !p.permanent_note && !hasDiff(p) && (allView || p.salesman === me || agOf(p).transferTo === me))
     .map((p) => { const ag = agOf(p); const bucket = bucketOf(p, ag); return { p, ag, bucket, pr: priorityOf(p, ag, bucket), broken: isBroken(ag) } })
     .sort((a, b) => (b.pr.rank - a.pr.rank) || (Number(b.p.total_pending) - Number(a.p.total_pending))),
   [rows, agg, me]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -251,7 +251,9 @@ export default function Salesman({ user, access }) {
   const nextUp = useMemo(() => (chip === 'all' && !q ? filtered.find((e) => e.pr.rank >= 3) : null), [filtered, chip, q])
   const { visCols } = cols
   const totals = useTotals(filtered)
-  const printNow = () => { setColPanel(false); printTable(visCols.length) }
+  const [printAll, setPrintAll] = useState(false)   // print me poori list (screen par sirf 200)
+  const printNow = () => { setColPanel(false); setPrintAll(true); printTable(visCols.length, () => setPrintAll(false)) }
+  const rowCap = printAll ? Infinity : 200
   const clearAll = () => { setQ(''); xf.clear(); setChip('all') }
   const anyFilter = q || xf.any || chip !== 'all'
   const filterTxt = [allView ? 'all salesmen' : me, chip !== 'all' ? chip : '', ...extraFilterText(xf.f), q ? `"${q}"` : ''].filter(Boolean).join(' · ')
@@ -312,7 +314,7 @@ export default function Salesman({ user, access }) {
           </div>
           <div className="coll-toolbar">
             <input className="search" placeholder="🔍 Search party / mobile / city…" value={q} onChange={(e) => setQ(e.target.value)} />
-            <ExtraFilters opts={opts} f={xf.f} set={xf.set} onDiffYes={() => cols.showCol('diff')} />
+            <ExtraFilters opts={opts} f={xf.f} set={xf.set} />
             {anyFilter && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
             <span className="filter-count active">🔎 {filtered.length} / {enriched.length}</span>
           </div>
@@ -339,16 +341,17 @@ export default function Salesman({ user, access }) {
           <table className="cfg-tbl coll-tbl sm-tbl">
             <thead>
               <tr>
-                <th className="no-print">Action</th><th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}
+                <th className="no-print">Action</th><th className="sno" title="Serial number">#</th><th>Priority</th><th>Party</th>{allView && <th>Salesman</th>}
                 {visCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''} title={c.title || ''}>{c.label}</th>)}
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 200).map((e) => {
+              {filtered.slice(0, rowCap).map((e, i) => {
                 const { p, ag, pr } = e
                 return (
                   <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''}`} onClick={() => setOpen(p.party_name)}>
                     <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
+                    <td className="sno">{i + 1}</td>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} showSalesman={false} me={allView ? '' : me} /></td>
                     {allView && <td className="small">{p.salesman || '—'}</td>}
@@ -356,9 +359,9 @@ export default function Salesman({ user, access }) {
                   </tr>
                 )
               })}
-              {filtered.length > 200 && <tr><td colSpan={(allView ? 4 : 3) + visCols.length} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
+              {filtered.length > rowCap && <tr><td colSpan={(allView ? 5 : 4) + visCols.length} className="muted small">…and {filtered.length - 200} more — use search</td></tr>}
             </tbody>
-            <TotalsRow visCols={visCols} totals={totals} count={filtered.length} lead={allView ? 3 : 2} />
+            <TotalsRow visCols={visCols} totals={totals} count={filtered.length} lead={allView ? 4 : 3} />
           </table>
         </div>
       ))}

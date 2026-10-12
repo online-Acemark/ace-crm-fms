@@ -79,6 +79,8 @@ Deno.serve(async () => {
         beat: null,
         city: String(r.City || "").trim() || null,
         total_pending: amts.reduce((a, b) => a + b, 0),
+        // ERP ledger balance — bill-wise pending se alag ho to "Difference": ledger check karna hai, follow-up nahi
+        ledger_balance: r.TotalPendingAmt == null || String(r.TotalPendingAmt).trim() === "" ? null : num(r.TotalPendingAmt),
         oldest_od: num(r.Overdue) || null,
         bill_count: amts.length,
         credit_days: r.CreditDays ?? null,
@@ -110,7 +112,7 @@ Deno.serve(async () => {
           mobile: String(lines[0].Mobile || "").trim() || null,
           salesman: String(lines[0].EmployeeName || "").trim() || null,
           beat: null, city: null,
-          total_pending: 0, oldest_od: null, bill_count: 0,
+          total_pending: 0, ledger_balance: null, oldest_od: null, bill_count: 0,
           credit_days: lines[0].AccountCreditDays ?? null,
           credit_limit: num(lines[0].CreditLimit) || null,
           last_pay_amt: num(lines[0].LastPayAmt) || null,

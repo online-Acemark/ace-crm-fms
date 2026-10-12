@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
-import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, pdcAmtText, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, pdcAmtText, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, ledgerDiff, diffReason, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, COLL_DEFAULT_ON, useColVis, cellOf, sortVal, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -19,7 +19,12 @@ const SITUATION_PRESETS = [
   { key: 'broken', label: '💔 Broken promise', tone: 'red' }, { key: 'hot', label: '🔴 Urgent', tone: 'red' }, { key: 'warm', label: '🟠 90+ days', tone: 'amber' },
   { key: 'committed', label: '🤝 Committed / PDC' }, { key: 'pdc', label: '🧾 PDC' }, { key: 'flw5', label: '🔁 5+ follow-ups' },
   { key: 'received', label: '💵 Received' }, { key: 'transferred', label: '↪ Transferred' }, { key: 'closed', label: '✅ Closed' }, { key: 'excluded', label: '🚫 Excluded' },
+  { key: 'diffchk', label: '⚖ Difference check', tone: 'amber' },
 ]
+const signInr = (v) => (Number(v) < 0 ? '−' + inr(-Number(v)) : inr(v))
+// worklist se bahar: permanent note (follow-up mat karo) + ledger difference (pehle khaata check karo)
+const offList = (e) => !!e.p.permanent_note || hasDiff(e.p)
+const OFF_PRESETS = ['excluded', 'diffchk']   // ye chips worklist ke bahar wali parties dikhate hain
 // preset -> party match (counts + filter dono isi se)
 function matchPreset(e, key, recvSet) {
   switch (key) {
@@ -34,6 +39,7 @@ function matchPreset(e, key, recvSet) {
     case 'received': return recvSet.has(normKey(e.p.party_name))
     case 'transferred': return !!e.ag.transferTo
     case 'excluded': return !!e.p.permanent_note
+    case 'diffchk': return hasDiff(e.p)
     default: return true
   }
 }
@@ -325,6 +331,15 @@ function PartyDetail({ p, ag, bucket, demo, salesmen, formOpts, onSaved, onToast
           {err && <span className="err small" style={{ margin: 0 }}>{err}</span>}
         </div>
       )}
+      {hasDiff(p) && (
+        <div className="diff-box">
+          <b>⚖ Ledger difference — check the ledger, do not chase payment</b>
+          <span>Bills pending: <b>{signInr(p.total_pending)}</b></span>
+          <span>ERP ledger: <b>{signInr(p.ledger_balance)}</b></span>
+          <span>Difference: <b className="amber-t">{signInr(ledgerDiff(p))}</b></span>
+          <span className="muted small">{diffReason(p)}. Once accounts fix it in ERP, the party comes back to the worklist on the next hourly sync.</span>
+        </div>
+      )}
       {noteOpen && (
         <div className="note-box">
           <textarea rows={2} placeholder="Why should this party stay out of the worklist? (legal case, disputed, account closed…)" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -455,7 +470,7 @@ export default function Collection() {
   const [rcpts, setRcpts] = useState([])
   const [q, setQ] = useState('')
   const [fSalesmen, setFSalesmen] = useState([]) // multi-select — khali = sab
-  const xf = useExtraFilters()                  // beat / aging bucket / company / difference
+  const xf = useExtraFilters()                  // beat / aging bucket / company / commitment / PDC
   const [preset, setPreset] = useState('all')
   const [sort, setSort] = useState(['priority', 'desc'])
   const [open, setOpen] = useState(null) // party_name jo modal me hai
@@ -464,6 +479,8 @@ export default function Collection() {
   const cols = useColVis('fms_coll_cols', COLL_DEFAULT_ON)
   const [colPanel, setColPanel] = useState(false)   // false | 'cols' | 'print'
   const formOpts = useFormOpts()                     // follow-up form dropdowns (Stage Plan se editable)
+  // Difference check chip: Ledger + Difference columns apne aap on
+  useEffect(() => { if (preset === 'diffchk') cols.showCols(['ledger', 'diff']) }, [preset]) // eslint-disable-line react-hooks/exhaustive-deps
   const [toast, setToast] = useState('')
   const [pulseOpen, setPulseOpen] = useState(() => localStorage.getItem('fms_coll_pulse') !== '0')
   // Pulse date range — default: is mahine
@@ -521,7 +538,7 @@ export default function Collection() {
   const openE = useMemo(() => enriched.find((e) => e.p.party_name === open) || null, [enriched, open])
 
   const kpi = useMemo(() => {
-    const live = enriched.filter((e) => !e.p.permanent_note)
+    const live = enriched.filter((e) => !offList(e))
     const sum = (list) => list.reduce((a, e) => a + Number(e.p.total_pending || 0), 0)
     const missed = live.filter((e) => e.bucket === 'missed')
     return {
@@ -533,7 +550,8 @@ export default function Collection() {
       old180: live.reduce((a, e) => a + Number(e.p.aging?.b180p || 0), 0),
       commit: live.filter((e) => matchPreset(e, 'committed', pulse.recvParties)).length,
       flw5: live.filter((e) => e.ag.count >= 5).length,
-      excluded: enriched.length - live.length,
+      excluded: enriched.filter((e) => e.p.permanent_note).length,
+      diffchk: enriched.filter((e) => hasDiff(e.p)).length,
     }
   }, [enriched, pulse])
 
@@ -547,14 +565,15 @@ export default function Collection() {
     return applyExtraFilters(list, xf.f)
   }, [enriched, q, fSalesmen, xf.f])
   const counts = useMemo(() => {
-    const live = base.filter((e) => !e.p.permanent_note)
+    const live = base.filter((e) => !offList(e))
     const c = {}
-    for (const pr of [...STATUS_PRESETS, ...SITUATION_PRESETS]) c[pr.key] = (pr.key === 'excluded' ? base : live).filter((e) => matchPreset(e, pr.key, pulse.recvParties)).length
+    for (const pr of [...STATUS_PRESETS, ...SITUATION_PRESETS]) c[pr.key] = (OFF_PRESETS.includes(pr.key) ? base : live).filter((e) => matchPreset(e, pr.key, pulse.recvParties)).length
     return c
   }, [base, pulse])
 
   const filtered = useMemo(() => {
-    let list = preset === 'excluded' ? base.filter((e) => e.p.permanent_note) : base.filter((e) => !e.p.permanent_note)   // permanent note wali parties worklist se bahar
+    // permanent note + ledger difference wali parties worklist se bahar — sirf apne chip me dikhti hain
+    let list = OFF_PRESETS.includes(preset) ? base : base.filter((e) => !offList(e))
     list = list.filter((e) => matchPreset(e, preset, pulse.recvParties))
     const [k, dir] = sort
     const mul = dir === 'desc' ? -1 : 1
@@ -579,7 +598,9 @@ export default function Collection() {
   )
   const { visCols } = cols
   const totals = useTotals(filtered)
-  const printNow = () => { setColPanel(false); printTable(visCols.length) }
+  const [printAll, setPrintAll] = useState(false)   // print me poori list (screen par sirf 200)
+  const printNow = () => { setColPanel(false); setPrintAll(true); printTable(visCols.length, () => setPrintAll(false)) }
+  const rowCap = printAll ? Infinity : 200
 
   const dismissHelp = () => { setShowHelp(false); try { localStorage.setItem('fms_coll_help_seen', '1') } catch { /* private mode */ } }
   const clearAll = () => { setQ(''); setFSalesmen([]); xf.clear(); setPreset('all') }
@@ -683,13 +704,13 @@ export default function Collection() {
         <div className="coll-toolbar">
           <input className="search" placeholder="🔍 Search party / mobile / city…" value={q} onChange={(e) => setQ(e.target.value)} />
           <MultiSelect label="Salesman" options={salesmen} value={fSalesmen} onChange={setFSalesmen} />
-          <ExtraFilters opts={opts} f={xf.f} set={xf.set} onDiffYes={() => cols.showCol('diff')} />
+          <ExtraFilters opts={opts} f={xf.f} set={xf.set} />
           {anyFilter && <button className="btn ghost sm" onClick={clearAll}>✕ Clear</button>}
           <span className="filter-count active">🔎 {filtered.length} / {kpi.parties}</span>
         </div>
         <div className="chip-rows">
           <div className="chip-row"><span className="preset-lbl">Follow-up</span>{STATUS_PRESETS.map(chip)}</div>
-          <div className="chip-row"><span className="preset-lbl">Situation</span>{SITUATION_PRESETS.map((pr) => pr.key === 'excluded' && !kpi.excluded ? null : chip(pr))}</div>
+          <div className="chip-row"><span className="preset-lbl">Situation</span>{SITUATION_PRESETS.map((pr) => OFF_PRESETS.includes(pr.key) && !kpi[pr.key] ? null : chip(pr))}</div>
         </div>
         {colPanel && <ColPanel mode={colPanel} cols={cols} allCols={COLS} presets={COL_PRESETS} count={filtered.length} onPrint={printNow} />}
       </div>
@@ -717,27 +738,28 @@ export default function Collection() {
           <table className="cfg-tbl coll-tbl">
             <thead>
               <tr>
-                <th className="no-print">Action</th>
+                <th className="no-print">Action</th><th className="sno" title="Serial number">#</th>
                 <th>{sortBtn('priority', 'Priority', 'Most important on top — work in this order')}</th>
                 <th>{sortBtn('party_name', 'Party')}</th>
                 {visCols.map((c) => <th key={c.key} className={c.num ? 'num' : ''} title={c.title || ''}>{c.sort ? sortBtn(c.sort, c.label, c.title) : c.label}</th>)}
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 200).map((e) => {
+              {filtered.slice(0, rowCap).map((e, i) => {
                 const { p, ag, pr } = e
                 return (
                   <tr key={p.party_name} className={`coll-row pr-row ${pr.cls} ${open === p.party_name ? 'is-open' : ''} ${p.permanent_note ? 'is-excluded' : ''}`} onClick={() => setOpen(p.party_name)}>
                     <td className="coll-actions no-print" onClick={(ev) => ev.stopPropagation()}>{rowActions(p)}</td>
+                    <td className="sno">{i + 1}</td>
                     <td><span className={`pr-badge ${pr.cls}`} title={pr.hint}>{pr.label}</span></td>
                     <td><PartyCell p={p} ag={ag} /></td>
                     {visCols.map((c) => <td key={c.key} className={c.num ? 'num' : ''}>{cellOf(c, e, xf.f)}</td>)}
                   </tr>
                 )
               })}
-              {filtered.length > 200 && <tr><td colSpan={3 + visCols.length} className="muted small">…and {filtered.length - 200} more parties — use the search box above</td></tr>}
+              {filtered.length > rowCap && <tr><td colSpan={4 + visCols.length} className="muted small">…and {filtered.length - 200} more parties — use the search box above</td></tr>}
             </tbody>
-            <TotalsRow visCols={visCols} totals={totals} count={filtered.length} lead={2} />
+            <TotalsRow visCols={visCols} totals={totals} count={filtered.length} lead={3} />
           </table>
         </div>
       )}

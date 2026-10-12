@@ -148,13 +148,17 @@ Deno.serve(async () => {
     // ---- pura ledger outstanding (fms_collection se) + Collection follow-up system ----
     let collCounts: Record<string, number> = {};
     try {
-      const col = await sbAll("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging,next_followup_date,permanent_note&order=party_name");
+      const col = await sbAll("fms_collection?select=party_name,total_pending,oldest_od,salesman,credit_limit,aging,next_followup_date,permanent_note,ledger_balance&order=party_name");
       if (col?.length) {
-        const live = col.filter((p: any) => !p.permanent_note);   // permanent note = worklist se bahar
+        // ledger difference = bill-wise pending != ERP ledger balance -> pehle khaata check, follow-up nahi
+        const ledDiff = (p: any) => (p.ledger_balance == null ? 0 : Math.round(Number(p.total_pending || 0) - Number(p.ledger_balance)));
+        const live = col.filter((p: any) => !p.permanent_note && !ledDiff(p));   // permanent note / difference = worklist se bahar
+        const diffs = col.filter((p: any) => ledDiff(p) !== 0);
         const tot = live.reduce((a: number, p: any) => a + Number(p.total_pending || 0), 0);
         const old180 = live.reduce((a: number, p: any) => a + Number(p.aging?.b180p || 0), 0);
         L.push("");
         L.push(`LEDGER OUTSTANDING (sab firms): ${inr(tot)} | ${live.length} parties | 180+ din purana: ${inr(old180)}`);
+        if (diffs.length) L.push(`LEDGER DIFFERENCE CHECK: ${diffs.length} parties ka bill-wise pending ERP ledger se match nahi — inka follow-up nahi, accounts khaata check kare (Collection > Difference check)`);
 
         // --- follow-up log (fms_followups, party-level) -> Missed / Aaj due / Broken promise / kal ka kaam ---
         // Rules app (Collection tab) jaise: aaj call log ya last stage "CRM Support" -> Missed nahi; "Close" -> list se bahar.

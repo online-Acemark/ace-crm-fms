@@ -1,8 +1,11 @@
 // Collection + My Parties ka shared table setup: columns, column picker state, filters, totals, print.
 // (Sirf non-component exports — components CollBits.jsx me hain, fast-refresh ke liye.)
 import { useMemo, useState } from 'react'
-import { inr, dmy, userName, BUCKETS, agingSum, agingDiff, firmsOf, pdcList, pdcAmtText, isoDay } from './coll'
+import { inr, dmy, userName, BUCKETS, agingSum, ledgerDiff, diffReason, firmsOf, pdcList, pdcAmtText, isoDay } from './coll'
 import { AgingChips, LimitBar, StageChip, BucketPill, FirmChips } from '../components/CollBits'
+
+// minus amounts: '−₹5,000' (inr() sirf positive ke liye bana hai)
+const money = (v) => (Number(v) < 0 ? '−' + inr(-Number(v)) : inr(v))
 
 // aging column ka rang: pehle 2 buckets green, agle 2 amber, baaki red (AgingChips jaisa)
 const AGE_CLS = ['green-t', 'green-t', 'amber-t', 'amber-t', 'red-t', 'red-t', 'red-t']
@@ -17,7 +20,8 @@ export const COLS = [
   { key: 'aging', label: 'Aging (chips)', title: 'How old the money is — green is new, red is very old' },
   ...AGING_COLS,
   { key: 'aging_sum', label: 'Aging Total', sort: 'aging_sum', num: true, total: agingSum, title: 'Sum of all aging buckets' },
-  { key: 'diff', label: 'Difference', sort: 'diff', num: true, total: agingDiff, title: 'Total Pending − Aging Total: money that is not in the ERP aging report' },
+  { key: 'ledger', label: 'Ledger Balance', sort: 'ledger', num: true, total: (p) => Number(p.ledger_balance || 0), title: 'Party ledger balance in ERP' },
+  { key: 'diff', label: 'Difference', sort: 'diff', num: true, total: ledgerDiff, title: 'Bill-wise pending − ERP ledger balance. Not 0 = check the ledger, do not chase payment' },
   { key: 'credit_limit', label: 'Credit Limit', sort: 'credit_limit', title: 'Credit limit given to the party and how much is used' },
   { key: 'last_pay', label: 'Last Payment', sort: 'last_pay', title: 'Last receipt in ERP' },
   { key: 'next', label: 'Next F/Up', sort: 'next' },
@@ -33,7 +37,8 @@ export const COLS = [
 // Print panel ke quick presets: kaunse columns on rakhne hain
 export const COL_PRESETS = {
   'Follow-up list': ['total_pending', 'oldest_od', 'company', 'next', 'flw', 'stage', 'committed', 'commit_date', 'pdc', 'remark'],
-  'Aging report': ['total_pending', 'company', ...AGING_COLS.map((c) => c.key), 'aging_sum', 'diff'],
+  'Aging report': ['total_pending', 'company', ...AGING_COLS.map((c) => c.key), 'aging_sum'],
+  'Difference check': ['total_pending', 'ledger', 'diff', 'company', 'last_pay', 'city'],
   'Party master': ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'city', 'beat'],
 }
 export const COLL_DEFAULT_ON = ['total_pending', 'oldest_od', 'company', 'credit_limit', 'last_pay', 'next', 'flw', 'stage', 'committed', 'commit_date', 'pdc']
@@ -50,8 +55,9 @@ export function useColVis(lsKey, defaultOn) {
   const toggleCol = (k) => save({ ...colVis, [k]: !vis(COLS.find((c) => c.key === k)) })
   const resetCols = () => { setColVis({}); try { localStorage.removeItem(lsKey) } catch { /* ignore */ } }
   const applyPreset = (name) => { const on = new Set(COL_PRESETS[name]); const n = {}; COLS.forEach((c) => { n[c.key] = on.has(c.key) }); save(n) }
-  const showCol = (k) => { if (!vis(COLS.find((c) => c.key === k))) toggleCol(k) }
-  return { vis, visCols, toggleCol, resetCols, applyPreset, showCol }
+  // kai columns ek saath on (alag-alag toggleCol purana state overwrite kar deta)
+  const showCols = (ks) => { const n = { ...colVis }; let ch = false; ks.forEach((k) => { if (!vis(COLS.find((c) => c.key === k))) { n[k] = true; ch = true } }); if (ch) save(n) }
+  return { vis, visCols, toggleCol, resetCols, applyPreset, showCols }
 }
 
 // ek cell ka content — e = { p, ag, bucket, broken }
@@ -62,7 +68,9 @@ export function cellOf(c, { p, ag, bucket, broken }, xfF) {
     case 'aging': return <AgingChips aging={p.aging} />
     case 'company': return <FirmChips p={p} agingF={xfF?.agingF} />
     case 'aging_sum': { const v = agingSum(p); return v ? <b>{inr(v)}</b> : <span className="muted">—</span> }
-    case 'diff': { const v = agingDiff(p); return Math.abs(v) > 1 ? <b className="amber-t" title={`${inr(p.total_pending)} pending − ${inr(agingSum(p))} in aging`}>{inr(v)}</b> : <span className="muted">—</span> }
+    case 'ledger': return p.ledger_balance == null ? <span className="muted">—</span> : <span className={Number(p.ledger_balance) < 0 ? 'green-t' : ''}>{money(p.ledger_balance)}</span>
+    case 'diff': { const v = ledgerDiff(p); return v ? <b className="amber-t" title={`Bills ${inr(p.total_pending)} − Ledger ${money(p.ledger_balance)}
+${diffReason(p)}`}>{money(v)}</b> : <span className="muted">—</span> }
     case 'credit_limit': return <LimitBar pending={p.total_pending} limit={p.credit_limit} />
     case 'last_pay': {
       const r = ag.receipts[0]
@@ -119,18 +127,20 @@ export function sortVal(k, e, dir) {
     : k === 'stage' ? String(e.ag.lastStage || '')
     : (k === 'city' || k === 'beat') ? String(e.p[k] || '')
     : k === 'aging_sum' ? agingSum(e.p)
-    : k === 'diff' ? agingDiff(e.p)
+    : k === 'diff' ? ledgerDiff(e.p)
+    : k === 'ledger' ? Number(e.p.ledger_balance ?? 0)
     : k.startsWith('ag_') ? Number(e.p.aging?.[k.slice(3)] || 0)
     : Number(e.p[k] || 0)
 }
 
-// ---------- extra filters (beat / aging bucket / company / difference / commitment / PDC) ----------
-export const EMPTY_FILTERS = { beat: [], agingF: [], company: '', diffF: '', commitF: '', pdcF: '' } // beat/agingF = multi-select
+// ---------- extra filters (beat / aging bucket / company / commitment / PDC) ----------
+// (Difference wali parties ab alag "⚖ Difference check" chip me hain — worklist ka filter nahi)
+export const EMPTY_FILTERS = { beat: [], agingF: [], company: '', commitF: '', pdcF: '' } // beat/agingF = multi-select
 export function useExtraFilters() {
   const [f, setF] = useState(EMPTY_FILTERS)
   const set = (k, v) => setF((o) => ({ ...o, [k]: v }))
   const clear = () => setF(EMPTY_FILTERS)
-  const any = !!(f.beat.length || f.agingF.length || f.company || f.diffF || f.commitF || f.pdcF)
+  const any = !!(f.beat.length || f.agingF.length || f.company || f.commitF || f.pdcF)
   return { f, set, clear, any }
 }
 export function filterOptions(rows) {
@@ -139,13 +149,12 @@ export function filterOptions(rows) {
     companies: [...new Set((rows || []).flatMap((p) => firmsOf(p)))].sort(),
   }
 }
-export function applyExtraFilters(list, { beat, agingF, company, diffF, commitF, pdcF }) {
+export function applyExtraFilters(list, { beat, agingF, company, commitF, pdcF }) {
   const beats = Array.isArray(beat) ? beat : beat ? [beat] : []
   if (beats.length) list = list.filter((e) => beats.includes(String(e.p.beat || '').trim()))
   const ages = Array.isArray(agingF) ? agingF : agingF ? [agingF] : []
   if (ages.length) list = list.filter((e) => ages.some((k) => Number(e.p.aging?.[k] || 0) > 0))
   if (company) list = list.filter((e) => firmsOf(e.p).includes(company))
-  if (diffF) list = list.filter((e) => (Math.abs(agingDiff(e.p)) > 1) === (diffF === 'yes'))
   const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10) // IST
   if (commitF) list = list.filter((e) => {
     const d = e.ag.committed?.date ? String(e.ag.committed.date).slice(0, 10) : null
@@ -167,9 +176,9 @@ export function applyExtraFilters(list, { beat, agingF, company, diffF, commitF,
 // print header ke liye: lage hue filters ek line me
 const COMMIT_TXT = { has: 'has commitment', today: 'commit today', up: 'commit upcoming', due: 'commit date passed', none: 'no commitment' }
 const PDC_TXT = { has: 'has PDC', today: 'PDC today', up: 'PDC upcoming', due: 'PDC date passed', none: 'no PDC' }
-export function extraFilterText({ beat, agingF, company, diffF, commitF, pdcF }) {
+export function extraFilterText({ beat, agingF, company, commitF, pdcF }) {
   const ages = Array.isArray(agingF) ? agingF : agingF ? [agingF] : []
-  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), ages.length ? 'aging ' + ages.map((k) => (BUCKETS.find(([b]) => b === k) || [])[1] + 'd').join(' + ') : '', company, diffF ? (diffF === 'yes' ? 'has difference' : 'no difference') : '', COMMIT_TXT[commitF] || '', PDC_TXT[pdcF] || ''].filter(Boolean)
+  return [(Array.isArray(beat) ? beat : beat ? [beat] : []).join(' + '), ages.length ? 'aging ' + ages.map((k) => (BUCKETS.find(([b]) => b === k) || [])[1] + 'd').join(' + ') : '', company, COMMIT_TXT[commitF] || '', PDC_TXT[pdcF] || ''].filter(Boolean)
 }
 
 // footer totals: jo parties filter me dikh rahi hain, unka column-wise jod (sirf number columns)
@@ -179,17 +188,19 @@ export function useTotals(filtered) {
 
 // Print: saare chune columns page par aa jaayein — column count se font chhota + fixed layout,
 // 7+ columns par landscape. Rule sirf is print ke liye lagta hai, afterprint par hat jaata hai.
-export function printTable(nCols) {
+// onDone: print khatam -> list wapas 200 rows par (print ke liye poori list render hoti hai)
+export function printTable(nCols, onDone) {
   const landscape = nCols > 7
   const availPx = landscape ? 1060 : 730                    // A4 @96dpi minus 8mm margins
-  const perCol = availPx / (nCols + 2)                       // + Priority + Party
+  const perCol = (availPx - 28) / (nCols + 2)                // - S.No + Priority + Party
   const font = Math.max(6.5, Math.min(10.5, perCol / 6.2))   // ~6 chars per column width
   const st = document.createElement('style')
   st.textContent = `@media print {
     @page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 8mm; }
     .coll-tbl { font-size: ${font.toFixed(1)}px !important; table-layout: fixed; width: 100% !important; min-width: 0 !important; }
     .coll-tbl th, .coll-tbl td { white-space: normal !important; word-break: break-word; overflow-wrap: anywhere; padding: 2px 3px !important; }
-    .coll-tbl th:nth-child(3), .coll-tbl td:nth-child(3) { width: ${Math.round(perCol * 2.2)}px; }   /* Party (Action column print me hidden hai) */
+    .coll-tbl th:nth-child(2), .coll-tbl td:nth-child(2) { width: 28px; }   /* S.No (Action column print me hidden hai) */
+    .coll-tbl th:nth-child(4), .coll-tbl td:nth-child(4) { width: ${Math.round(perCol * 2.2)}px; }   /* Party */
     .coll-tbl .small, .coll-tbl .muted, .coll-tbl .pcell-m, .coll-tbl .pcell-m .tag { font-size: 0.9em !important; }
     .coll-tbl .pcell-n { font-size: 1em; white-space: normal; }
     .coll-tbl .pcell-m { white-space: normal; }
@@ -200,7 +211,8 @@ export function printTable(nCols) {
     .coll-tbl .pcell .ava { display: none; }
   }`
   document.head.appendChild(st)
-  const done = () => { st.remove(); window.removeEventListener('afterprint', done) }
+  let over = false
+  const done = () => { if (over) return; over = true; st.remove(); window.removeEventListener('afterprint', done); onDone?.() }
   window.addEventListener('afterprint', done); setTimeout(done, 60000)
-  setTimeout(() => window.print(), 50)
+  setTimeout(() => window.print(), 150)
 }

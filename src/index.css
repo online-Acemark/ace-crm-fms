@@ -499,10 +499,14 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .stage-chip.st-flw { color: var(--txt); background: var(--panel2); }
 .stage-chip.st-says { color: var(--txt); border-style: dashed; font-weight: 600; }
 .tag-stop { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 50%, transparent); }
+.tag-diff { background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent); }
+.diff-box { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 8px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); background: color-mix(in srgb, var(--amber) 9%, transparent); }
+.diff-box .muted { flex-basis: 100%; }
 /* permanent note wali party: poori row laal tint + strike name — "is party ka follow-up nahi karna" ek nazar me */
 .pr-row.is-excluded td { background: color-mix(in srgb, var(--red) 7%, transparent) !important; }
 .pr-row.is-excluded td:first-child { border-left: 3px solid var(--red); }
 .pr-row.is-excluded .pcell-n { text-decoration: line-through; color: var(--muted); }
+.coll-tbl .sno { width: 34px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fup-stop { margin-top: 6px; padding: 6px 8px; border: 1px dashed var(--line); border-radius: 8px; display: flex; gap: 6px; align-items: center; }
 .fup-stop.on { border-color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); color: var(--red); }
 .form-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }

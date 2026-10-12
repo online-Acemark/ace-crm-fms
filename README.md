@@ -79,19 +79,25 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
   Pulse "Received (ERP)" is the real number; amounts typed in notes are only "claimed" and show as
   ⚠ until ERP confirms (Full → bill hidden as paid).
 - **Permanent note** (`fms_collection.permanent_note`) = party excluded from worklist ("Excluded" chip).
+- **Ledger difference** (`fms_collection.ledger_balance` = ERP PaymentFollowup `TotalPendingAmt`):
+  Difference = bill-wise pending (Total Pending) − ERP ledger balance; anything other than 0 means an
+  entry was not adjusted against bills. Such parties are NOT payment-followed: they leave the worklist,
+  KPIs, My Parties and the digest totals, and show under the "⚖ Difference check" chip (Ledger Balance +
+  Difference columns switch on, "Check ledger" priority, reason hint in the party modal). When accounts
+  fix it in ERP the difference becomes 0 on the next hourly sync and the party is back in the worklist.
+  (Until Oct 2026 Difference was Total − Aging; the ERP now ages every entry, so that was always 0.)
 - **Pulse**: date range -> received amount, follow-ups done, by user. Columns picker (localStorage
   `fms_coll_cols`) + Print (current filter).
 - **Filters** (toolbar): search, Salesman, Beat, Aging bucket (parties with money in that bucket),
-  Company (parties with bills of that firm), Difference (Has / No difference — picking "Has
-  difference" also switches the Difference column on). Chip counts follow these filters.
-- **Aging columns**: one column per ERP bucket (0-30 … 180+), Aging Total (sum of buckets) and
-  Difference = Total Pending − Aging Total (money not in the ERP aging report — mostly internal /
-  non-trade accounts). Company column shows the firms of the party's bills. Number columns get a
+  Company (parties with bills of that firm), Commitment, PDC. Chip counts follow these filters.
+- **Aging columns**: one column per ERP bucket (0-30 … 180+), Aging Total (sum of buckets), Ledger
+  Balance and Difference (see Ledger difference above). Company column shows the firms of the party's bills. Number columns get a
   totals row at the bottom for the parties in the current filter.
 - **Print**: 🖨 opens a print setup panel — tick columns (presets: Follow-up list / Aging report /
-  Party master), then "Print now"; more than 7 columns prints landscape. Column choice is the same
+  Difference check / Party master), then "Print now"; more than 7 columns prints landscape. Column choice is the same
   as the ⚙ Columns picker. Only the table prints (plus a one-line header with filters and totals);
-  title, KPIs, pulse, filters, chips and the "Start here" banner are hidden on paper. Every ticked
+  title, KPIs, pulse, filters, chips and the "Start here" banner are hidden on paper. Rows carry a
+  serial number (#) and the print renders the whole filtered list (screen shows the first 200). Every ticked
   column fits the page: font size shrinks with the column count (fixed table layout, wrapping cells),
   so nothing is cropped even with all 23 columns on.
 - Column config, cell renderers, extra filters, totals and print live in `src/lib/collCols.jsx`
@@ -107,7 +113,7 @@ Demo without login: open http://localhost:5173/?demo (static sample data from pu
 - Shows only the logged-in salesman's parties (+ those transferred to them). Login -> ERP salesman
   name: admin sets it in User Control ("Salesman (My Parties)"), else auto-match by Google name /
   email first name (only when exactly one salesman matches). Admins get a "view as salesman" picker.
-- Same toolbar filters as Collection (Beat / Aging / Company / Difference), ⚙ Columns picker
+- Same toolbar filters as Collection (Beat / Aging / Company / Commitment / PDC), ⚙ Columns picker
   (localStorage `fms_sales_cols`, default: pending, oldest due, aging chips, last payment, next,
   stage, committed) and 🖨 Print setup with the same presets and totals row.
 - Row click expands: overdue bills (tick to link), ERP receipts, history, and the **commitment form**

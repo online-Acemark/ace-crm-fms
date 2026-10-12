@@ -8,8 +8,19 @@ export const BUCKETS = [
 ]
 // saat buckets ka jod — ERP ki aging report me jitna paisa gina gaya
 export const agingSum = (p) => BUCKETS.reduce((a, [k]) => a + Number(p?.aging?.[k] || 0), 0)
-// Total Pending − aging sum: jo paisa aging report me nahi aaya (internal / non-trade accounts)
-export const agingDiff = (p) => Math.round(Number(p?.total_pending || 0) - agingSum(p))
+// Difference = bill-wise pending − ERP ledger balance (PaymentFollowup.TotalPendingAmt).
+// 0 nahi hai to ledger me koi entry bills se adjust nahi hui — party ka khaata check karna hai, payment follow-up nahi.
+// ledger_balance null = ERP ne ledger nahi diya (party sirf Urgent API me) — tab difference nahi maante.
+export const ledgerDiff = (p) => (p?.ledger_balance == null ? 0 : Math.round(Number(p.total_pending || 0) - Number(p.ledger_balance)))
+export const hasDiff = (p) => ledgerDiff(p) !== 0
+// difference ka sambhavit kaaran (accounts team ke liye hint)
+export const diffReason = (p) => {
+  const d = ledgerDiff(p)
+  if (!d) return ''
+  if (Number(p.ledger_balance) < 0) return 'Ledger shows an advance / credit balance, but bills are still pending — the payment was not adjusted against bills'
+  return d > 0 ? 'Bills show more than the ledger — a receipt / credit note / journal was not adjusted against bills'
+    : 'Ledger shows more than the bills — an entry without a bill (journal / opening / payment) is in the ledger'
+}
 // party ke bills kin firms ke hain (Acemark Stationers / Publications / Ace Paper …) — distinct, sorted
 export const firmsOf = (p) => [...new Set((p?.bills || []).map((b) => String(b.company || '').trim()).filter(Boolean))].sort()
 // chip ke liye chhota naam: 'Acemark Publications' -> 'Publications', 'Ace Paper Products' -> 'Ace Paper'
@@ -146,6 +157,7 @@ export function buildAgg(fups, receipts) {
 // Priority: jitna bada number, utna upar. Naya banda bas upar se neeche kaam kare.
 export function priorityOf(p, ag, bucket) {
   if (p.permanent_note) return { rank: -1, label: 'Excluded', cls: 'pr-mild', hint: 'Permanent note set — party is out of the follow-up worklist' }
+  if (hasDiff(p)) return { rank: -1, label: 'Check ledger', cls: 'pr-warm', hint: diffReason(p) + ' — no payment follow-up until it is fixed' }
   if (bucket === 'closed') return { rank: 0, label: 'Closed', cls: 'pr-ok', hint: 'Last stage = Close. Will disappear after ERP shows it paid' }
   if (isBroken(ag)) return { rank: 6, label: 'Broken promise', cls: 'pr-hot', hint: `Promised ${inrShort(ag.committed.amount)} by ${dmy(ag.committed.date)} — nothing received since` }
   if (bucket === 'missed') return { rank: 5, label: 'Missed', cls: 'pr-hot', hint: 'Follow-up date has passed and nobody called' }
