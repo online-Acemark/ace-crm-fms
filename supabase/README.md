@@ -98,3 +98,21 @@ Purana Google Sheet source "Payment Collection" (registry 17) `is_official = fal
 - Actual = usi party par **agle din ya baad** ki pehli call entry ka `created_at` (koi bhi user).
 - Pending task tab hat-ta hai jab party `fms_collection` me nahi (paid) / permanent note / ledger difference.
 - Score sirf 28 Sep 2026 ke baad ki plan dates ka. Formula Score System ka (`score.mis_score_core`, datetime mode).
+
+## MIS Score: Today Work (Ahmad Khan) — table `fms_today_tasks`, view `score.v_o2d_today_work_mis`
+
+Today Work ke 3 kaam Score System me Ahmad Khan ke naam gine jaate hain (registry 26 "Order To Delivery (Today Work)",
+source 126). Payment follow-up yahan nahi (wo Maahi ke Collection Follow-up me hai); Hold / Contact gine nahi jaate.
+Purana "Order To Delivery" Google Sheet source (registry 10, sources 95–97) 16 Oct 2026 se band hai.
+
+- `fms-sync` har 30 min `todayTasksOf()` se task banata hai aur `rpc/fms_capture_today_tasks` ko bhejta hai. Naya task
+  insert hota hai aur uska `planned_at` **lock** ho jaata hai (MIS: original planned kabhi nahi badalta); baad ke syncs sirf
+  `actual_at` bharte hain.
+  - **Confirm order** (har order): planned = SO Convert rule (aaya + 30 min; 7:30 PM ke baad / chhutti → agle working
+    din 11:00). Actual = ERP `SoConvertDate`.
+  - **Billing** (har confirmed order jo bill ho gaya ya Billing Pending me dikhne layak hai — stock ho, sab lines
+    pre-closed na hon, hold nahi): planned = confirm (ya stock baad me aaya to pehli baar list me aane ka waqt) 4 PM se
+    pehle → usi din 4 PM, warna agle working din 4 PM. Actual = ERP billing date.
+  - **Dispatch** (har bill): planned = Today Work ka dispatch planned (order 4 PM se pehle → usi din 23:59, warna agle
+    din 23:59). Actual = bill ki saari lines par GP + DespDate (ERP sirf date deta hai → din ke hisaab se on-time).
+- View sirf 19 Oct 2026 ke baad ke planned ginta hai; cancelled / hold orders ke pending task bahar.

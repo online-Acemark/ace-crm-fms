@@ -71,7 +71,10 @@ function soConvertPlanned(t: Date | null, plannedHours: number | null) {
   if (!t) return null;
   const addMs = (plannedHours != null ? Number(plannedHours) : 0.5) * H;
   const cutoff = new Date(t); cutoff.setHours(SO_CUTOFF[0], SO_CUTOFF[1], 0, 0);
-  if (isWorkingDay(t) && t <= cutoff) return new Date(t.getTime() + addMs);
+  if (isWorkingDay(t) && t <= cutoff) {
+    const open = new Date(t); open.setHours(NEXT_DAY_START[0], NEXT_DAY_START[1], 0, 0); // office 10:30 se pehle aaya → 11:00 AM
+    return new Date(Math.max(t.getTime(), open.getTime()) + addMs);
+  }
   const day = nextWorkingDay(t);
   day.setHours(NEXT_DAY_START[0], NEXT_DAY_START[1], 0, 0);
   return new Date(day.getTime() + addMs);
@@ -98,6 +101,66 @@ function billingPlanned(base: Date | null, o: any) {
   else day = nextWorkingDay(base);
   day.setHours(BILL_CUTOFF[0], BILL_CUTOFF[1], 0, 0);
   return day;
+}
+
+// ---------- Today Work tasks -> MIS score (fms_today_tasks; Ahmad Khan: confirm / billing / dispatch) ----------
+// Same rules as the app's Today Work (ActionCenter). planned_at is locked at the FIRST capture
+// (DB function fms_capture_today_tasks), later syncs only fill actual_at.
+const TASK_CAPTURE_FROM = new Date(Date.UTC(2026, 9, 12)); // IST frame; score counts from 19 Oct (view filter)
+const toTs = (dt: Date | null) => (dt ? new Date(dt.getTime() - IST).toISOString() : null); // IST frame -> real instant
+// Billing pending dikhta tab hai jab unbilled lines ka stock ho aur sab lines pre-closed na hon
+function unbilledLines(o: any) { return (o.products || []).filter((p: any) => Number(p.qty) > 0 && p.bno == null); }
+function stockOkUnbilled(o: any) {
+  if (!stockMap) return true;
+  return unbilledLines(o).every((p: any) => { const s = stockMap![String(p.code || "").trim().toLowerCase()]; return s != null && s >= Number(p.qty); });
+}
+function hasBillableLeft(o: any) {
+  const ub = unbilledLines(o);
+  if (!ub.length) return true;
+  const pre: Record<string, number> = {};
+  for (const pc of o.preclosed || []) { const k = String(pc.name || "").trim().toLowerCase(); pre[k] = (pre[k] || 0) + (Number(pc.reset) || 0); }
+  return ub.some((p: any) => (pre[String(p.name || "").trim().toLowerCase()] || 0) < Number(p.qty));
+}
+// billing planned (stock available): 4 PM se pehle aur working day -> usi din 4 PM, warna agle working din 4 PM
+function billingDue(base: Date) {
+  const cut = new Date(base); cut.setHours(BILL_CUTOFF[0], BILL_CUTOFF[1], 0, 0);
+  const day = isWorkingDay(base) && base <= cut ? new Date(base) : nextWorkingDay(base);
+  day.setHours(BILL_CUTOFF[0], BILL_CUTOFF[1], 0, 0);
+  return day;
+}
+function todayTasksOf(o: any, pipe: Record<string, any>) {
+  const out: any[] = [];
+  const so = Number(o.mobile_so_no);
+  const party = o.account_name || null;
+  const add = (kind: string, key: string, planned: Date | null, actual: Date | null, bill: string | null = null) => {
+    if (!planned || planned < TASK_CAPTURE_FROM) return;
+    out.push({ task_key: key, kind, mobile_so_no: so, bill_no: bill, party, planned_at: toTs(planned), actual_at: toTs(actual) });
+  };
+  // 1) Confirm order: har order
+  add("confirm", `confirm:${so}`, pipe.so_convert?.planned || null, d(o.so_convert_date));
+  // 2) Billing: confirm ke baad — billed ho chuka, ya Today Work Billing Pending me dikhne layak (stock + billable, hold nahi)
+  const conv = d(o.so_convert_date);
+  if (conv) {
+    const billed = d(o.billing_date);
+    const listed = !billed && !o.on_hold && stockOkUnbilled(o) && hasBillableLeft(o);
+    if (billed || listed) {
+      // stock baad me aaya (confirm ko 45 min+ ho gaye, ab pehli baar list me) -> ginti abhi se
+      const now = nowIST();
+      const base = billed || now.getTime() - conv.getTime() < 45 * 60 * 1000 ? conv : now;
+      add("billing", `billing:${so}`, billingDue(base), billed);
+    }
+  }
+  // 3) Dispatch: har bill (GP + DespDate saari lines par = dispatched); planned = Today Work ka dispatch planned
+  const ps = o.products || [];
+  for (const b of o.bills || []) {
+    const key = String(b.bill_no);
+    const lines = ps.filter((x: any) => String(x.bno ?? "") === key);
+    if (!lines.length) continue;
+    const done = lines.every((x: any) => x.gpno != null && x.ddt);
+    const desp = done ? lines.map((x: any) => x.ddt).filter(Boolean).sort().at(-1) : null;
+    add("dispatch", `dispatch:${so}:${key}`, pipe.dispatch?.planned || null, d(desp), key);
+  }
+  return out;
 }
 
 // ---------- ERP Payment.ashx: bill-wise payment reconciliation ----------
@@ -419,6 +482,7 @@ Deno.serve(async () => {
     for (const st of stages.filter((s: any) => s.active)) stageStats[st.stage_key] = { name: st.stage_name, ontime: 0, late: 0, open: 0 };
     const smStats: Record<string, any> = {};
     let scoreSum = 0, scoreN = 0, outstandingSum = 0;
+    const todayTasks: any[] = [];
 
     const payload = aggregated.map((o) => {
       // ERP payment data: order ke har bill ka summary jodkar
@@ -473,6 +537,7 @@ Deno.serve(async () => {
       const delays: Record<string, number> = {};
       for (const k of Object.keys(pipe)) if (pipe[k].delayH != null) delays[k] = Math.round(pipe[k].delayH * 100) / 100;
       const scoreVal = computeScore(pipe, scoring);
+      try { todayTasks.push(...todayTasksOf(merged, pipe)); } catch (_e) { /* task capture kabhi sync na roke */ }
 
       // snapshot accumulation
       for (const k of Object.keys(pipe)) {
@@ -524,6 +589,15 @@ Deno.serve(async () => {
       }
     } catch (_e) { /* cancel-mark fail hone se sync nahi rukta */ }
 
+    // ---- Today Work tasks -> fms_today_tasks (MIS score). Naya task = planned lock; purana = sirf actual update ----
+    let tasksWritten = 0;
+    try {
+      if (todayTasks.length) {
+        const n = await sb("rpc/fms_capture_today_tasks", { method: "POST", body: JSON.stringify({ p_tasks: todayTasks }) });
+        tasksWritten = Number(n) || 0;
+      }
+    } catch (_e) { /* task capture fail hone se sync nahi rukta */ }
+
     // ---- daily snapshot upsert: din bhar refresh hota hai, raat ka aakhri sync = us din ka final ----
     try {
       const salesmen: Record<string, any> = {};
@@ -547,7 +621,7 @@ Deno.serve(async () => {
       });
     } catch (_e) { /* snapshot fail hone se sync nahi rukta */ }
 
-    return new Response(JSON.stringify({ ok: true, synced: payload.length, cancelled_marked: cancelledMarked, at: new Date().toISOString() }), {
+    return new Response(JSON.stringify({ ok: true, synced: payload.length, cancelled_marked: cancelledMarked, today_tasks: todayTasks.length, today_tasks_written: tasksWritten, at: new Date().toISOString() }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {

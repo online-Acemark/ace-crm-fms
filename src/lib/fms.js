@@ -317,7 +317,7 @@ function billingPlanned(base, o) {
   return day
 }
 
-// SO Convert rule: working day par 7:30 PM se pehle aaya → +30 min;
+// SO Convert rule: working day par 7:30 PM se pehle aaya → +30 min (office 10:30 se pehle aaya → 11:00 AM);
 // warna (late/Sunday/holiday) → agle working day 10:30 AM + 30 min = 11:00 AM
 const SO_CUTOFF = [19, 30]
 const NEXT_DAY_START = [10, 30]
@@ -325,7 +325,10 @@ function soConvertPlanned(t, plannedHours) {
   if (!t) return null
   const addMs = (plannedHours != null ? Number(plannedHours) : 0.5) * 3600 * 1000
   const cutoff = new Date(t); cutoff.setHours(SO_CUTOFF[0], SO_CUTOFF[1], 0, 0)
-  if (isWorkingDay(t) && t <= cutoff) return new Date(t.getTime() + addMs)
+  if (isWorkingDay(t) && t <= cutoff) {
+    const open = new Date(t); open.setHours(NEXT_DAY_START[0], NEXT_DAY_START[1], 0, 0)   // raat / subah-subah aaya → ginti 10:30 se
+    return new Date(Math.max(t.getTime(), open.getTime()) + addMs)
+  }
   const day = nextWorkingDay(t)
   day.setHours(NEXT_DAY_START[0], NEXT_DAY_START[1], 0, 0)
   return new Date(day.getTime() + addMs)

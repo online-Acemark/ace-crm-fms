@@ -69,7 +69,10 @@ function soConvertPlanned(t: Date | null, plannedHours = 0.5) {
   if (!t) return null;
   const addMs = plannedHours * H;
   const cutoff = new Date(t); cutoff.setHours(19, 30, 0, 0);
-  if (isWorkingDay(t) && t <= cutoff) return new Date(t.getTime() + addMs);
+  if (isWorkingDay(t) && t <= cutoff) {
+    const open = new Date(t); open.setHours(10, 30, 0, 0); // office 10:30 se pehle aaya → 11:00 AM
+    return new Date(Math.max(t.getTime(), open.getTime()) + addMs);
+  }
   const day = nextWorkingDay(t);
   day.setHours(10, 30, 0, 0);
   return new Date(day.getTime() + addMs);
