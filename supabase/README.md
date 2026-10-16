@@ -115,4 +115,8 @@ Purana "Order To Delivery" Google Sheet source (registry 10, sources 95–97) 16
     pehle → usi din 4 PM, warna agle working din 4 PM. Actual = ERP billing date.
   - **Dispatch** (har bill): planned = Today Work ka dispatch planned (order 4 PM se pehle → usi din 23:59, warna agle
     din 23:59). Actual = bill ki saari lines par GP + DespDate (ERP sirf date deta hai → din ke hisaab se on-time).
-- View sirf 19 Oct 2026 ke baad ke planned ginta hai; cancelled / hold orders ke pending task bahar.
+- View sirf 19 Oct 2026 ke baad ke planned ginta hai (shuru ki date `fms_settings.today_work_score.from` se, default
+  19 Oct); cancelled / hold orders ke pending task bahar.
+- Score System me har Today Work section ka **alag source** hai (merge nahi): source 126 "Naya Order (Confirm)" →
+  `score.v_o2d_confirm_mis`, 127 "Billing" → `v_o2d_billing_mis`, 128 "Dispatch" → `v_o2d_dispatch_mis`
+  (teeno common view `v_o2d_today_work_mis` ko `step_no` se filter karte hain).
