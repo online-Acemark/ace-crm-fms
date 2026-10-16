@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
-import { inr, inrShort, dmy, isoDay, toLocalInput, normKey, pdcAmtText, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, ledgerDiff, diffReason, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, normKey, pdcAmtText, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, ledgerDiff, diffReason, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, COLL_DEFAULT_ON, useColVis, cellOf, sortVal, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -60,7 +60,10 @@ function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) 
   const [cDate, setCDate] = useState('')
   const [tTo, setTTo] = useState('')
   const [tReason, setTReason] = useState('')
-  const [nextDate, setNextDate] = useState(() => toLocalInput(suggestNextFollowup()))
+  // next follow-up: din suggest hota hai, TIME user khud chunta hai (MIS score isi time se judge karta hai)
+  const [nextDay, setNextDay] = useState(() => isoDay(suggestNextFollowup()))
+  const [nextTime, setNextTime] = useState('')
+  const nextDate = nextDay && nextTime ? `${nextDay}T${nextTime}` : ''
   const [stop, setStop] = useState(!!p.permanent_note)       // permanent note: is party ka follow-up nahi karna
   const [stopNote, setStopNote] = useState(p.permanent_note || '')
   const [saving, setSaving] = useState(false)
@@ -73,10 +76,10 @@ function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) 
 
   const pickStage = (st) => {
     setStage(st); setErr('')
-    if (st === 'Committed') { if (!cDate && nextDate) setCDate(nextDate.slice(0, 10)); if (!cAmt && billSum) setCAmt(String(Math.round(billSum))) }
+    if (st === 'Committed') { if (!cDate && nextDay) setCDate(nextDay); if (!cAmt && billSum) setCAmt(String(Math.round(billSum))) }
     if (st === 'Payment received' && !amount && billSum) setAmount(String(Math.round(billSum)))
   }
-  const quickNext = (days) => { const d = suggestNextFollowup(days); setNextDate(toLocalInput(d)) }
+  const quickNext = (days) => setNextDay(isoDay(suggestNextFollowup(days)))
   const needNext = stage && stage !== 'Close' && !stop
   const remarkPh = stage === 'Follow-up' ? (says === 'Other' ? 'Write what the customer said' : 'Remark (optional)')
     : stage === 'Payment received' ? 'Remark, e.g. "RTGS ref 1234" (optional)'
@@ -96,7 +99,8 @@ function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) 
     if (stage === 'CRM Support' && !remark.trim()) { setErr('CRM Support — write the remark for the office'); return }
     if (stage === 'Transfer' && !tTo.trim()) { setErr('Transfer — pick the salesman to hand over to'); return }
     if (stage === 'Close' && !remark.trim()) { setErr('Close — write why'); return }
-    if (needNext && !nextDate) { setErr('Set the next follow-up date'); return }
+    if (needNext && !nextDay) { setErr('Set the next follow-up date'); return }
+    if (needNext && !nextTime) { setErr('Pick the time you will call back — your score is checked against this time'); return }
     if (stop && !stopNote.trim()) { setErr('Permanent note — write why this party should not be followed up'); return }
     if (demo) { setErr('Demo mode cannot save — use the real login'); return }
     setSaving(true); setErr('')
@@ -121,6 +125,7 @@ function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) 
       transfer_reason: stage === 'Transfer' ? tReason.trim() || null : null,
       followup_date: isoDay(),
       next_followup_date: nextIso,   // PLAN (scoring)
+      plan_time_set: !!nextIso,      // time user ne khud chuna — MIS score exact time se
       created_by: user?.email || '',
     })
     const upd = { next_followup_date: nextIso }
@@ -134,7 +139,7 @@ function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) 
       : stage === 'Close' ? '✅ Saved — party closed, it leaves the Today/Tomorrow lists.'
       : stage === 'Transfer' ? `✅ Saved — this party now shows under ${tTo.trim()} as well.`
       : isPay ? '✅ Saved as claimed — the hourly ERP sync will confirm it against the bills.'
-      : `✅ Saved! Next follow-up ${dmy(nextDate)} — it will appear under "Today" that day.`)
+      : `✅ Saved! Next follow-up ${dmy(nextDay)} at ${nextTime} — it will appear under "Today" that day.`)
     onClose()
   }
 
@@ -209,10 +214,17 @@ function FollowupForm({ p, bills, salesmen, formOpts, demo, onClose, onSaved }) 
           </div>
           <div className="step-form">
             <b><span className="step-num">3</span> When to remind next?</b>
-            <input type="datetime-local" value={nextDate} disabled={!needNext} onChange={(e) => setNextDate(e.target.value)} />
+            <div className="fld-row">
+              <input type="date" value={nextDay} disabled={!needNext} title="Follow-up date" onChange={(e) => setNextDay(e.target.value)} />
+              <input type="time" value={nextTime} disabled={!needNext} title="Time you will call back" className={needNext && !nextTime ? 'need' : ''} onChange={(e) => setNextTime(e.target.value)} />
+            </div>
             {needNext && <div className="fld-row quick">
               {[['Tomorrow', 1], ['+3 days', 3], ['+7 days', 7], ['+15 days', 15], ['+50 days', 50]].map(([l, d]) => <button key={d} className="btn ghost sm" onClick={() => quickNext(d)}>{l}</button>)}
             </div>}
+            {needNext && <div className="fld-row quick">
+              {[['11 AM', '11:00'], ['1 PM', '13:00'], ['3 PM', '15:00'], ['5 PM', '17:00'], ['7 PM', '19:00']].map(([l, t]) => <button key={t} className={`btn ghost sm ${nextTime === t ? 'on' : ''}`} onClick={() => setNextTime(t)}>{l}</button>)}
+            </div>}
+            {needNext && <span className="muted small">Pick the time too — the MIS score counts the call as on time only if it is made by this time.</span>}
             {stage === 'Close' && <span className="muted small">Close = no next date; party leaves the worklist.</span>}
             {stop && <span className="muted small">Permanent note = no next date.</span>}
             <button className="btn primary" onClick={save} disabled={saving}>{saving ? '⏳ Saving…' : '💾 Save follow-up'}</button>

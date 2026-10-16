@@ -83,3 +83,18 @@ hissa hai (bill-level; har bill ke liye sum(PaidAmt) = TotalAdjusted), `StillPen
 `PayStatus` Full/Part/Pending. `fms-collection-sync` inhe voucher-wise group karke `fms_receipts`
 (PK company_id + pay_vno) me upsert karta hai — purane vouchers delete nahi hote. API sirf Jan-2026 se
 aage ke bills cover karta hai, isliye ek voucher ka amount usi window ke bills ka jod hai.
+
+## MIS Score: Collection follow-ups (view `score.v_crm_collection_followup_mis`)
+
+Maahi (`acemarkcrm@gmail.com`) ke collection follow-ups Acemark **Score System** (`score` schema, same
+project) me MIS rules se gine jaate hain. Score System har 5 min `score.sync_webapp_facts()` se view
+padh ke `score.task_facts` me daalta hai (registry id 25 "Collection Follow-up", source id 125).
+Purana Google Sheet source "Payment Collection" (registry 17) `is_official = false` hai (16 Oct 2026).
+
+- 1 task = Maahi ki ek planned follow-up: party ki us din ki **aakhri** entry ka `next_followup_date`
+  (ek call me kai bill-notes = ek hi task). WhatsApp auto-log, `Close` stage aur sheet import nahi gine jaate.
+- Planned: `fms_followups.plan_time_set = true` (form me time chuna, 16 Oct 2026 se zaroori) → exact
+  time; purane plans (default 11:00) → us din 23:59:59 IST. `original_planned_at` = planned (entry kabhi edit nahi hoti).
+- Actual = usi party par **agle din ya baad** ki pehli call entry ka `created_at` (koi bhi user).
+- Pending task tab hat-ta hai jab party `fms_collection` me nahi (paid) / permanent note / ledger difference.
+- Score sirf 28 Sep 2026 ke baad ki plan dates ka. Formula Score System ka (`score.mis_score_core`, datetime mode).

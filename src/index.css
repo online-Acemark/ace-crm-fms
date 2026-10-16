@@ -590,6 +590,7 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .fup-modal2 { width: min(980px, 96vw); }
 .fup2-grid { display: grid; grid-template-columns: 1.3fr 1.2fr 1fr; gap: 14px; }
 .fup2-grid select, .fup2-grid input { padding: 6px 8px; font-size: 12.5px; width: 100%; }
+.fup2-grid input.need { border-color: var(--amber); box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 25%, transparent); }
 .coll-rcpts { min-width: 0; }
 .rcpt-tbl { font-size: 12px; }
 .rcpt-tbl th { text-align: left; }
