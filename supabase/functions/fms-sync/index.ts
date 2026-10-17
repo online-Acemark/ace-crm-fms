@@ -9,6 +9,7 @@ const ERP_DEFAULTS = {
   preclosed: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/PreClosedOrder.ashx",
   hold: "http://eksai12.ddns.net:8786/ek_api/telegramApi/PreclosedHoldorder.ashx",
   micro: "http://eksai12.ddns.net:8786/ek_api/telegramApi/RetailerUnderMicroOrder.ashx",
+  holdso: "http://eksai12.ddns.net:8786/ek_api/googleAutomation/HoldSo.ashx",
 };
 const IST = 5.5 * 3600 * 1000; // function UTC me chalta hai; ERP dates IST wall-clock naked strings hain
 const H = 3600 * 1000;
@@ -448,12 +449,43 @@ Deno.serve(async () => {
 
     // PreclosedHoldorder: HOLD par rakhe SOs — billing pending/score me nahi ginenge
     let holdSet = new Set<number>();
+    let holdOk = false;                       // hold list sach me aayi? (fail ho to Hold Approval cases ko mat chhedo)
+    const holdSoStr = new Map<string, number>(); // SOrderNoString -> MobileAppSoNo (HoldSo ko jodne ke liye)
+    const holdOrders = new Map<number, any>();     // MobileAppSoNo -> party / salesman / amount (Hold Approval case)
     try {
       const hres = await fetch(erpCfg.hold_url || ERP_DEFAULTS.hold, { signal: AbortSignal.timeout(120000) });
       const hjson = await hres.json();
       const hrows = Array.isArray(hjson) ? hjson : hjson?.DataRec || [];
       holdSet = new Set(hrows.map((r: any) => Number(r.MobileAppSoNo)).filter((n: number) => n > 0));
+      for (const r of hrows) {
+        const mso = Number(r.MobileAppSoNo);
+        if (!(mso > 0)) continue;
+        if (r.SOrderNoString) holdSoStr.set(String(r.SOrderNoString).trim(), mso);
+        if (!holdOrders.has(mso)) holdOrders.set(mso, {
+          mobile_so_no: mso, so_no: String(r.SOrderNoString || "").trim() || null, party: String(r.AccountName || "").trim() || null,
+          salesman: String(r.SalesMan_Cloud || "").trim() || null, amount: Number(r.SorderAmount) || null,
+        });
+      }
+      holdOk = Array.isArray(hjson) || Array.isArray(hjson?.DataRec);
     } catch { holdSet = new Set(); }
+
+    // HoldSo: hold orders ki commercial detail (closing balance, PDC, credit, salesman remark) — Hold Approval screen ke liye
+    const holdInfo = new Map<number, any>();
+    try {
+      const hsres = await fetch(erpCfg.holdso_url || ERP_DEFAULTS.holdso, { signal: AbortSignal.timeout(120000) });
+      const hsjson = await hsres.json();
+      const hsrows = Array.isArray(hsjson) ? hsjson : hsjson?.DataRec || [];
+      for (const r of hsrows) {
+        const mso = holdSoStr.get(String(r.SOrderNoString || "").trim());
+        if (!mso || holdInfo.has(mso)) continue;
+        holdInfo.set(mso, {
+          so_no: String(r.SOrderNoString || "").trim(), net_amount: Number(r.NetAmount) || 0,
+          closing_balance: Number(r.ClosingBalance) || 0, pdc_amount: Number(r.PDCReceiptAmount) || 0,
+          credit_limit: Number(r.CreditLimit) || 0, credit_days: r.CreditDays ?? null,
+          remarks: String(r.Remarks || "").trim() || null, hold_by: String(r.CreatedBy || "").trim() || null,
+        });
+      }
+    } catch { /* HoldSo optional — case phir bhi khulta hai */ }
 
     // RetailerUnderMicroOrder: micro-flag + salesman ka remark (delivery instruction)
     const microMap = new Map<number, string>();
@@ -519,6 +551,7 @@ Deno.serve(async () => {
       o.on_hold = holdSet.has(Number(o.mobile_so_no));
       o.micro_order = microMap.has(Number(o.mobile_so_no));
       o.so_remark = microMap.get(Number(o.mobile_so_no)) || null;
+      o.hold_info = o.on_hold ? holdInfo.get(Number(o.mobile_so_no)) || null : null;
 
       // PreClosed: is order ki cancel/short-close hui lines
       const pcRows = forOrder(pcIdx, o.sorder_no, o.account_name).filter((r: any) => Number(r.Qty_Reset) > 0);
@@ -589,6 +622,16 @@ Deno.serve(async () => {
       }
     } catch (_e) { /* cancel-mark fail hone se sync nahi rukta */ }
 
+    // ---- Hold Approval: hold pe pade orders -> case kholo / band karo (sirf jab hold list sach me aayi) ----
+    let holdCases: any = null;
+    try {
+      if (holdOk) {
+        // hold API ki list se (order feed purane orders nahi deta — unka case galti se band na ho)
+        const holds = [...holdOrders.values()].map((h) => ({ ...h, amount: Number(holdInfo.get(h.mobile_so_no)?.net_amount || h.amount || 0) || null }));
+        holdCases = await sb("rpc/fms_sync_hold_cases", { method: "POST", body: JSON.stringify({ p_holds: holds }) });
+      }
+    } catch (_e) { /* hold case sync fail hone se sync nahi rukta */ }
+
     // ---- Today Work tasks -> fms_today_tasks (MIS score). Naya task = planned lock; purana = sirf actual update ----
     let tasksWritten = 0;
     try {
@@ -621,7 +664,7 @@ Deno.serve(async () => {
       });
     } catch (_e) { /* snapshot fail hone se sync nahi rukta */ }
 
-    return new Response(JSON.stringify({ ok: true, synced: payload.length, cancelled_marked: cancelledMarked, today_tasks: todayTasks.length, today_tasks_written: tasksWritten, at: new Date().toISOString() }), {
+    return new Response(JSON.stringify({ ok: true, synced: payload.length, cancelled_marked: cancelledMarked, today_tasks: todayTasks.length, today_tasks_written: tasksWritten, hold_cases: holdCases, at: new Date().toISOString() }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {

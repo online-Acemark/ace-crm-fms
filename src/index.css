@@ -864,3 +864,16 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
   .top-right { margin-left: auto; }
   .contact-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Hold Approval ---------- */
+.hold-modal { max-width: 640px; }
+.hold-form { display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+.hold-form-head { display: flex; flex-direction: column; gap: 2px; }
+.hold-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.hold-form-grid label { display: flex; flex-direction: column; gap: 4px; }
+.hold-form-grid .hold-wide { grid-column: 1 / -1; }
+.hold-tbl td { vertical-align: top; }
+.hold-act { min-width: 170px; }
+.hold-act .fld-row { margin-top: 6px; flex-wrap: wrap; }
+.hold-panel { border-left: 3px solid var(--amber); }
+.coll-detail .hold-form { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; }

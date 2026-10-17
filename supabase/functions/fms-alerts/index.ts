@@ -90,10 +90,91 @@ const sendTG = async (text: string) => {
   if (!j.ok) throw new Error("Telegram: " + JSON.stringify(j));
 };
 
+// ---------- Hold Approval alerts (Telegram DM) ----------
+// Naya hold -> us party ke SALESMAN ko (commitment bharo); commitment aate hi APPROVER (Deepak) ko.
+// Chat id master user list (public.users.telegram_chat_id) se. Pehle FMS bot, na chale to Score System bot
+// (chat id kisi bhi bot ka ho sakta hai — jis bot ko user ne /start kiya hai wahi DM bhej sakta hai).
+const normPerson = (s: unknown) => String(s || "").toLowerCase().replace(/\s*\(.*\)\s*$/, "").replace(/[.]+$/, "").replace(/\s+/g, " ").trim();
+const dmyIST = (v: unknown) => { const t = d(v); return t ? `${String(t.getDate()).padStart(2, "0")}/${String(t.getMonth() + 1).padStart(2, "0")} ${hm(t)}` : ""; };
+async function holdAlerts() {
+  // shuruaat fms_settings.hold_score.from se (19 Oct 2026) — usse pehle koi alert nahi
+  const cfg = await sb("fms_settings?key=eq.hold_score&select=value");
+  const from = new Date(cfg?.[0]?.value?.from || "2026-10-19T00:00:00+05:30").getTime();
+  if (Date.now() < from) return { hold_new: 0, hold_approve: 0, note: "hold alerts start " + new Date(from).toISOString() };
+  const cases = await sbAll("fms_hold_cases?select=*&released_at=is.null&order=id");
+  const fresh = cases.filter((c: any) => !c.salesman_alerted_at && Date.now() - Math.max(new Date(c.hold_seen_at).getTime(), from) < 48 * H);
+  const toApprove = cases.filter((c: any) => c.commit_at && !c.decision && !c.approver_alerted_at);
+  if (!fresh.length && !toApprove.length) return { hold_new: 0, hold_approve: 0 };
+
+  const [users, approvers, tgRow, ss] = await Promise.all([
+    sbAll("users?select=id,user_name,telegram_chat_id&order=id"),
+    sb("fms_users?select=email,employee_id&can_approve_hold=eq.true"),
+    sb("fms_settings?key=eq.telegram&select=value"),
+    sb("rpc/ss_secrets", { method: "POST", headers: { "Content-Profile": "score" }, body: "{}" }).catch(() => ({})),
+  ]);
+  const bots = [tgRow?.[0]?.value?.token, (ss as any)?.TELEGRAM_BOT_TOKEN].filter(Boolean);
+  const chatOfName = (name: unknown) => users.find((u: any) => normPerson(u.user_name) === normPerson(name) && String(u.telegram_chat_id || "").trim())?.telegram_chat_id;
+  const chatOfEmp = (id: unknown) => users.find((u: any) => u.id === id && String(u.telegram_chat_id || "").trim())?.telegram_chat_id;
+  const dm = async (chat: unknown, text: string) => {
+    for (const tok of bots) {
+      try {
+        const r = await fetch(`https://api.telegram.org/bot${tok}/sendMessage`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: String(chat).trim(), text: text.slice(0, 4000) }),
+        });
+        if ((await r.json()).ok) return true;
+      } catch (_e) { /* agla bot try karo */ }
+    }
+    return false;
+  };
+  const sos = [...new Set(cases.map((c: any) => c.mobile_so_no))];
+  const infoRows = sos.length ? await sbAll(`fms_orders?select=mobile_so_no,hold_info&mobile_so_no=in.(${sos.join(",")})&order=mobile_so_no`) : [];
+  const info = new Map(infoRows.map((r: any) => [r.mobile_so_no, r.hold_info || {}]));
+  const patch = (id: number, body: any) => sb(`fms_hold_cases?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(body) });
+
+  let sentNew = 0, sentApprove = 0;
+  for (const c of fresh) {
+    const chat = chatOfName(c.salesman);
+    if (!chat) continue; // chat id nahi — add hote hi agle run me (48 ghante tak) chala jayega
+    const hi: any = info.get(c.mobile_so_no) || {};
+    const text = [
+      `HOLD ORDER — party se baat karke commitment bharo`,
+      `Party: ${c.party || ""}`,
+      `SO: ${c.so_no || ""} (#${c.mobile_so_no}) | ${inr(c.amount)}`,
+      `Closing balance: ${inr(hi.closing_balance)} | PDC: ${inr(hi.pdc_amount)} | Credit limit: ${inr(hi.credit_limit)}`,
+      hi.remarks ? `Remark: ${hi.remarks}` : "",
+      `Target: ${dmyIST(c.commit_planned_at)} tak`,
+      `App: My Parties -> Hold commitment`,
+    ].filter(Boolean).join("\n");
+    if (await dm(chat, text)) { await patch(c.id, { salesman_alerted_at: new Date().toISOString() }); sentNew++; }
+  }
+  for (const c of toApprove) {
+    const text = [
+      `HOLD APPROVAL PENDING`,
+      `Party: ${c.party || ""} | SO: ${c.so_no || ""} (#${c.mobile_so_no}) | ${inr(c.amount)}`,
+      `Commitment: ${inr(c.commit_amount)} by ${c.commit_date || ""} | ${c.pay_through || ""} | Reminder: ${c.reminder ? "Yes" : "No"}`,
+      c.remarks ? `Remark: ${c.remarks}` : "",
+      `Salesman: ${c.salesman || ""} | Target: ${dmyIST(c.approve_planned_at)} tak`,
+      `App: Today Work -> Hold Approval`,
+    ].filter(Boolean).join("\n");
+    let any = false;
+    for (const a of approvers || []) { const chat = chatOfEmp(a.employee_id); if (chat && await dm(chat, text)) any = true; }
+    if (any) { await patch(c.id, { approver_alerted_at: new Date().toISOString() }); sentApprove++; }
+  }
+  return { hold_new: sentNew, hold_approve: sentApprove };
+}
+
 Deno.serve(async (req) => {
   try {
-    const mode = new URL(req.url).searchParams.get("mode") || "instant";
+    let mode = new URL(req.url).searchParams.get("mode") || "";
+    if (!mode && req.method === "POST") { try { mode = (await req.json())?.mode || ""; } catch (_e) { /* body nahi */ } }
+    mode = mode || "instant";
     const now = nowIST();
+
+    if (mode === "hold") {
+      const r = await holdAlerts();
+      return new Response(JSON.stringify({ ok: true, ...r }), { headers: { "Content-Type": "application/json" } });
+    }
 
     if (mode === "dispatch") {
       // BILL-WISE (app ke Today Work jaisa): bill bana par nikla nahi — har bill apni line; hold wale bahar
@@ -169,7 +250,10 @@ Deno.serve(async (req) => {
 
     if (parts.length) await sendTG(parts.join("\n\n"));
 
-    return new Response(JSON.stringify({ ok: true, sent: parts.length > 0, newOrders: newLines.length, confirmLate: lateLines.length, loggedRows: newLog.length }), { headers: { "Content-Type": "application/json" } });
+    let hold: any = null;
+    try { hold = await holdAlerts(); } catch (e) { hold = { error: String(e) }; }
+
+    return new Response(JSON.stringify({ ok: true, sent: parts.length > 0, newOrders: newLines.length, confirmLate: lateLines.length, loggedRows: newLog.length, hold }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }

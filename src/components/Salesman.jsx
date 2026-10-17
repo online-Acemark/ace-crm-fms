@@ -4,9 +4,12 @@ import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from 
 import { inr, inrShort, dmy, isoDay, normKey, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, SALES_DEFAULT_ON, useColVis, cellOf, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
+import { HoldCommitForm, useHoldCases, holdStatus, PAY_THROUGH } from './HoldApproval'
 
 // My Parties (salesman tab): login wale salesman ki apni parties (+ jo usko transfer hui),
-// har party par commitment form (amount + date + remark). Data wahi (fms_collection / fms_followups / fms_receipts).
+// har party par commitment form (Hold SO Google Form jaise fields: amount, date, payment through, reminder, remarks).
+// Party ka order ERP me HOLD ho to wahi commitment Hold Approval case me jaati hai (Deepak approve karte hain).
+// Data wahi (fms_collection / fms_followups / fms_receipts / fms_hold_cases).
 // Super admin (is_admin) ko sab salesmen; phone par cards.
 
 // Google login -> ERP salesman name. Pehle admin mapping (fms_users.salesman), warna naam / email se auto-match.
@@ -54,6 +57,8 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(() => isoDay(suggestNextFollowup()))
   const [remark, setRemark] = useState('')
+  const [pay, setPay] = useState('')
+  const [reminder, setReminder] = useState('Yes')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
   const selSum = selBills.reduce((a, b) => a + Number(b.pending || 0), 0)
@@ -63,6 +68,7 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
     if (!(Number(amount) > 0)) { setErr('Enter the amount the party promised'); return }
     if (!date) { setErr('Pick the promised date'); return }
     if (date < isoDay()) { setErr('Promised date cannot be in the past'); return }
+    if (!pay) { setErr('Pick how the party will pay (payment through)'); return }
     if (demo) { setErr('Demo mode cannot save — use the real login'); return }
     setSaving(true); setErr('')
     const { data: { user } } = await supabase.auth.getUser()
@@ -71,6 +77,7 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
       remarks: remark.trim() || `Committed ${inr(amount)} by ${dmy(date)}`,
       customer_says: says || null,
       committed_amount: Number(amount), committed_date: date,
+      payment_mode: pay, reminder: reminder === 'Yes',
       bill_nos: selBills.map((b) => b.vno),
       followup_date: isoDay(), created_by: user?.email || '',
       next_followup_date: new Date(date + 'T11:00:00').toISOString(),   // PLAN = wade ka din (scoring)
@@ -80,7 +87,7 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
     const cd = new Date(date + 'T11:00:00')
     const cur = p.next_followup_date ? new Date(p.next_followup_date) : null
     if (!cur || cur > cd) await supabase.from('fms_collection').update({ next_followup_date: cd.toISOString() }).eq('party_name', p.party_name)
-    setSaving(false); setAmount(''); setRemark('')
+    setSaving(false); setAmount(''); setRemark(''); setPay('')
     onSaved?.(`✅ Commitment saved — ${inr(amount)} by ${dmy(date)}. CRM will follow up on that day.`)
   }
 
@@ -96,6 +103,15 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
         </label>
         <label className="small muted">Promised date
           <input type="date" value={date} min={isoDay()} onChange={(e) => setDate(e.target.value)} />
+        </label>
+        <label className="small muted">Payment through
+          <select value={pay} onChange={(e) => setPay(e.target.value)}>
+            <option value="">Select…</option>
+            {PAY_THROUGH.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </label>
+        <label className="small muted">Reminder
+          <select value={reminder} onChange={(e) => setReminder(e.target.value)}><option>Yes</option><option>No</option></select>
         </label>
         <label className="small muted">Customer says
           <select value={says} onChange={(e) => setSays(e.target.value)}>
@@ -121,7 +137,7 @@ function CommitForm({ p, ag, selBills, demo, onSaved }) {
 }
 
 // ---------- party modal body: stats, actions, commitment form, tabs (bills / receipts / history) ----------
-function PartyPanel({ p, ag, bucket, demo, onSaved, onToast }) {
+function PartyPanel({ p, ag, bucket, demo, onSaved, onToast, holds = [] }) {
   const [sel, setSel] = useState([])
   const [tab, setTab] = useState('bills')
   const overdue = (p.bills || []).filter((b) => (b.od || 0) > 0 && b.pay_status !== 'Full' && !ag.paid.has(b.vno))
@@ -147,7 +163,9 @@ function PartyPanel({ p, ag, bucket, demo, onSaved, onToast }) {
         {!p.mobile && <span className="muted small">No mobile number in ERP</span>}
         {ag.transferTo && <span className="stage-chip st-park">↪ Transferred to {ag.transferTo}{ag.transferReason ? ' — ' + ag.transferReason : ''}</span>}
       </div>
-      <CommitForm p={p} ag={ag} selBills={sel} demo={demo} onSaved={saved} />
+      {holds.length > 0
+        ? holds.map((hc) => <HoldCommitForm key={hc.id} hc={hc} onDone={saved} />)   // order ERP me HOLD — commitment Deepak ke approval me jaati hai
+        : <CommitForm p={p} ag={ag} selBills={sel} demo={demo} onSaved={saved} />}
       <Tabs active={tab} onChange={setTab} tabs={[
         { key: 'bills', label: '🧾 Overdue bills', n: overdue.length },
         { key: 'rcpt', label: '💵 Receipts (ERP)', n: ag.receipts.length },
@@ -196,6 +214,8 @@ export default function Salesman({ user, access }) {
   const cols = useColVis('fms_sales_cols', SALES_DEFAULT_ON)
   const [colPanel, setColPanel] = useState(false)   // false | 'cols' | 'print'
   const [toast, setToast] = useState('')
+  const [holdCases, reloadHold] = useHoldCases()
+  const [holdFor, setHoldFor] = useState(null)   // hold case jiska commitment form khula hai
 
   useEffect(() => {
     if (demo) { fetch('/demo-collection.json').then((r) => r.json()).then(setRows).catch(() => setRows([])); return }
@@ -224,6 +244,10 @@ export default function Salesman({ user, access }) {
     .sort((a, b) => (b.pr.rank - a.pr.rank) || (Number(b.p.total_pending) - Number(a.p.total_pending))),
   [rows, agg, me]) // eslint-disable-line react-hooks/exhaustive-deps
   const openE = useMemo(() => enriched.find((e) => e.p.party_name === open) || null, [enriched, open])
+  // is salesman ke hold orders (ERP SalesMan_Cloud naam) — "(N)" jaise suffix ignore
+  const smKey = (v) => normKey(String(v || '').replace(/\s*\(.*\)\s*$/, ''))
+  const myHolds = useMemo(() => holdCases.filter((c) => !c.decision && me && (allView || smKey(c.salesman) === smKey(me))), [holdCases, me, allView]) // eslint-disable-line react-hooks/exhaustive-deps
+  const holdsOf = (party) => holdCases.filter((c) => !c.decision && normKey(c.party) === normKey(party))
 
   const kpi = useMemo(() => {
     const m0 = isoDay().slice(0, 7)
@@ -325,6 +349,40 @@ export default function Salesman({ user, access }) {
 
       {demo && <div className="panel demo-note"><p className="muted small">⚠️ SAMPLE data (demo mode).</p></div>}
 
+      {myHolds.length > 0 && (
+        <div className="panel hold-panel">
+          <h3 className="uc-title">⏸ Orders on hold — talk to the party and fill the commitment <span className="count-badge">{myHolds.length}</span></h3>
+          <div className="sec-tbl-wrap">
+            <table className="cfg-tbl act-tbl">
+              <thead><tr><th>Party</th><th>SO</th><th className="num">Amount</th>{allView && <th>Salesman</th>}<th>Status</th><th></th></tr></thead>
+              <tbody>
+                {myHolds.map((c) => {
+                  const st = holdStatus(c)
+                  const late = !c.commit_at && c.commit_planned_at && new Date() > new Date(c.commit_planned_at)
+                  return (
+                    <tr key={c.id}>
+                      <td><b>{c.party}</b></td>
+                      <td className="small">{c.so_no || '—'}<div className="muted">#{c.mobile_so_no}</div></td>
+                      <td className="num"><b>{inr(c.amount)}</b></td>
+                      {allView && <td className="small">{c.salesman || '—'}</td>}
+                      <td className="small"><b className={late ? 'red-t' : st.cls}>{st.label}</b>{!c.commit_at && c.commit_planned_at && <div className={late ? 'red-t' : 'muted'}>target {new Date(c.commit_planned_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })}</div>}</td>
+                      <td><button className="btn primary sm" onClick={() => setHoldFor(c)}>{c.commit_at ? '✏️ Edit commitment' : '🤝 Commitment'}</button></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {holdFor && (
+        <div className="modal-back" onClick={() => setHoldFor(null)}>
+          <div className="modal hold-modal" onClick={(ev) => ev.stopPropagation()}>
+            <HoldCommitForm hc={holdFor} onCancel={() => setHoldFor(null)} onDone={(m) => { setHoldFor(null); setToast(m); reloadHold(); setTick((t) => t + 1) }} />
+          </div>
+        </div>
+      )}
+
       {me && !filtered.length && (
         <div className="panel empty-state"><div className="es-ico">🎉</div><b>{enriched.length ? 'Nothing here' : `No pending parties under ${me}`}</b>{enriched.length > 0 && <p className="muted small">No party matches this filter.</p>}</div>
       )}
@@ -379,7 +437,7 @@ export default function Salesman({ user, access }) {
               </div>
               <button className="btn ghost" onClick={() => setOpen(null)}>✕ Close</button>
             </div>
-            <PartyPanel key={openE.p.party_name} p={openE.p} ag={openE.ag} bucket={openE.bucket} demo={demo} onSaved={() => setTick((t) => t + 1)} onToast={setToast} />
+            <PartyPanel key={openE.p.party_name} p={openE.p} ag={openE.ag} bucket={openE.bucket} demo={demo} holds={holdsOf(openE.p.party_name)} onSaved={() => { setTick((t) => t + 1); reloadHold() }} onToast={setToast} />
           </div>
         </div>
       )}

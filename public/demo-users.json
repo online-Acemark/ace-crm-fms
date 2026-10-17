@@ -1,0 +1,17 @@
+{
+  "employees": [
+    { "id": 901, "name": "Demo Manager", "email": "manager@example.com", "department": "Office", "designation": "Manager", "status": "active" },
+    { "id": 902, "name": "Demo CRM Executive", "email": "crm.exec@example.com", "department": "Office", "designation": "CRM", "status": "active" },
+    { "id": 903, "name": "Demo Billing", "email": "billing@example.com", "department": "Office", "designation": "Billing", "status": "active" },
+    { "id": 904, "name": "Demo Salesman", "email": "salesman@example.com", "department": "Salesman", "designation": "Salesman", "status": "active" },
+    { "id": 905, "name": "Demo Dispatch", "email": "dispatch@example.com", "department": "Office", "designation": "Dispatch", "status": "on_leave" },
+    { "id": 906, "name": "Demo New Joinee", "email": null, "department": "Office", "designation": null, "status": "active" },
+    { "id": 907, "name": "Demo Old Staff", "email": "old.staff@example.com", "department": "Office", "designation": null, "status": "inactive" }
+  ],
+  "logins": [
+    { "email": "manager@example.com", "full_name": "Demo Manager", "tabs": ["action", "fms", "pendqty", "coll", "sales", "score", "stages"], "is_admin": true, "salesman": null, "employee_id": 901 },
+    { "email": "crm.desk@example.com", "full_name": "CRM desk", "tabs": ["action", "coll", "sales"], "is_admin": false, "salesman": "*", "employee_id": 902 },
+    { "email": "billing@example.com", "full_name": "Demo Billing", "tabs": ["action", "fms"], "is_admin": false, "can_approve_hold": true, "salesman": null, "employee_id": null },
+    { "email": "branch.dispatch@example.com", "full_name": "Branch dispatch (shared)", "tabs": ["action"], "is_admin": false, "salesman": null, "employee_id": null }
+  ]
+}

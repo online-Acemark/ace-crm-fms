@@ -65,13 +65,33 @@ Deno.serve(async () => {
     const runAt = new Date().toISOString();
     const map = new Map<string, any>();
 
-    // 1) PaymentFollowup: party-level summary
+    // 1) PaymentFollowup: party-level summary.
+    // Oct 2026 se ERP ek party ki HAR COMPANY ki alag row deta hai (CompanyName) — party ki saari rows jodo
+    // (pehle aakhri row baaki ko overwrite karti thi: ledger sirf ek company ka -> jhootha "Difference").
+    const ledNum = (v: unknown) => (v == null || String(v).trim() === "" ? null : num(v));
     for (const r of pfRows) {
       const key = norm(r.PartyName);
       if (!key) continue;
       const amts = String(r.PendingAmt || "").split(",").map((x) => num(x)).filter((x) => x);
       const dates = String(r.VouDate || "").split(",").map((x) => dmy(x));
       const days = String(r.BillDays || "").split(",").map((x) => num(x));
+      const prev = map.get(key);
+      if (prev) {
+        prev.total_pending += amts.reduce((a, b) => a + b, 0);
+        const led = ledNum(r.TotalPendingAmt);
+        if (led != null) prev.ledger_balance = (prev.ledger_balance ?? 0) + led;
+        prev.oldest_od = Math.max(prev.oldest_od || 0, num(r.Overdue)) || null;
+        prev.bill_count += amts.length;
+        prev.bills.push(...amts.map((a, i) => ({ amt: a, pending: a, date: dates[i] || null, days: days[i] || null })));
+        prev.mobile = prev.mobile || String(r.MobileNo || "").trim() || null;
+        prev.salesman = prev.salesman || String(r.EmployeeName || "").trim() || null;
+        prev.city = prev.city || String(r.City || "").trim() || null;
+        prev.credit_days = prev.credit_days ?? r.CreditDays ?? null;
+        prev.credit_limit = Math.max(prev.credit_limit || 0, num(r.CreditLimit)) || null;
+        const lp = dmy(r.LastPayDate);
+        if (lp && (!prev.last_pay_date || lp > prev.last_pay_date)) { prev.last_pay_date = lp; prev.last_pay_amt = num(r.LastPayAmt) || null; }
+        continue;
+      }
       map.set(key, {
         party_name: String(r.PartyName || "").trim(),
         mobile: String(r.MobileNo || "").trim() || null,
@@ -80,7 +100,7 @@ Deno.serve(async () => {
         city: String(r.City || "").trim() || null,
         total_pending: amts.reduce((a, b) => a + b, 0),
         // ERP ledger balance — bill-wise pending se alag ho to "Difference": ledger check karna hai, follow-up nahi
-        ledger_balance: r.TotalPendingAmt == null || String(r.TotalPendingAmt).trim() === "" ? null : num(r.TotalPendingAmt),
+        ledger_balance: ledNum(r.TotalPendingAmt),
         oldest_od: num(r.Overdue) || null,
         bill_count: amts.length,
         credit_days: r.CreditDays ?? null,

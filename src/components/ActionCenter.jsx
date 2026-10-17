@@ -3,6 +3,7 @@ import { computePipeline, fmtDelay, fmtERP, resolveContact, contactMissing, buil
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 import MultiSelect from './MultiSelect'
+import HoldApproval, { useHoldCases } from './HoldApproval'
 
 const SECTIONS = [
   {
@@ -18,8 +19,8 @@ const SECTIONS = [
     how: 'Ek row = ek BILL (ek order ke kai bills ho sakte hain). Jo bill nikal chuka wo yahan nahi dikhta. 4 PM se pehle ke orders AAJ hi dispatch hone chahiye. Gate pass + transporter confirm karo, phir client ko 📤 Status bhejo.',
   },
   {
-    key: 'hold', icon: '⏸', title: 'On Hold — Roke Gaye Orders',
-    how: 'Ye orders ERP me jaan-boojh kar HOLD/pre-close kiye gaye hain — inko chase MAT karo. Order chalu karna ho to ERP me hold hatao; agle sync me apne aap Billing Pending me aa jayega.',
+    key: 'hold', icon: '⏸', title: 'Hold Approval — Commitment + Approve',
+    how: 'The order is on HOLD in ERP. The salesman talks to the party and fills the commitment within 1 office hour (My Parties or here 🤝), then Deepak approves / rejects within 1 office hour. After approval remove the hold in ERP — the next sync moves the order to Billing Pending.',
   },
   {
     key: 'payment', icon: '💰', title: 'Payment Follow-up — Aaj Call Karo',
@@ -31,7 +32,8 @@ const SECTIONS = [
   },
 ]
 
-export default function ActionCenter({ orders, stages, scoring, stockTick, onChanged }) {
+export default function ActionCenter({ orders, stages, scoring, stockTick, onChanged, access }) {
+  const [holdCases, reloadHold] = useHoldCases()   // Hold Approval cases (ERP me abhi hold)
   const [open, setOpen] = useState(null)
   const [fupOrder, setFupOrder] = useState(null)
   const [q, setQ] = useState('') // SO number ya party name se filter
@@ -134,10 +136,14 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
 
   // Contact Data Adhura asli "kaam" nahi hai — header ke total me nahi ginta
   const countable = SECTIONS.filter((s) => s.key !== 'contact')
-  const totalTasks = countable.reduce((n, s) => n + tasks[s.key].length, 0)
-  const shownTasks = countable.reduce((n, s) => n + filteredTasks[s.key].length, 0)
+  // Hold section ka kaam = hold cases jinka commitment / approval baaki hai (orders list nahi)
+  const holdPending = holdCases.filter((c) => !c.decision)
+  const holdShown = holdPending.filter((c) => (!fSalesman || (c.salesman || '').trim() === fSalesman) && (!q.trim() || `${c.party} ${c.mobile_so_no} ${c.so_no || ''}`.toLowerCase().includes(q.trim().toLowerCase())))
+  const secCount = (k, filtered) => (k === 'hold' ? (filtered ? holdShown : holdPending).length : (filtered ? filteredTasks : tasks)[k].length)
+  const totalTasks = countable.reduce((n, s) => n + secCount(s.key, false), 0)
+  const shownTasks = countable.reduce((n, s) => n + secCount(s.key, true), 0)
   // click nahi kiya to pehla section jisme kaam pada hai
-  const activeKey = secKey || SECTIONS.find((s) => filteredTasks[s.key].length)?.key || SECTIONS[0].key
+  const activeKey = secKey || SECTIONS.find((s) => secCount(s.key, true))?.key || SECTIONS[0].key
 
   return (
     <div className="action-page act-page">
@@ -162,12 +168,21 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
         {SECTIONS.map((s) => (
           <button key={s.key} className={activeKey === s.key ? 'sec-tab active' : 'sec-tab'} onClick={() => setSecKey(s.key)}>
             {s.icon} {s.title.split('—')[0].trim()}
-            <span className={filteredTasks[s.key].length ? 'count-badge' : 'count-badge zero'}>{filteredTasks[s.key].length}</span>
+            <span className={secCount(s.key, true) ? 'count-badge' : 'count-badge zero'}>{secCount(s.key, true)}</span>
           </button>
         ))}
       </div>
       {SECTIONS.filter((s) => s.key === activeKey).map((sec) => {
         const list = filteredTasks[sec.key]
+        if (sec.key === 'hold') return (
+          <div key={sec.key} className="panel action-sec">
+            <div className="sec-title">
+              <h3>{sec.icon} {sec.title} <span className={holdShown.length ? 'count-badge' : 'count-badge zero'}>{holdShown.length}</span></h3>
+              <p className="muted small how">Kaise: {sec.how}</p>
+            </div>
+            <HoldApproval cases={holdCases} orders={orders} access={access} q={q} fSalesman={fSalesman} onChanged={reloadHold} onOpenOrder={setOpen} />
+          </div>
+        )
         return (
           <div key={sec.key} className="panel action-sec">
             <div className="sec-title">

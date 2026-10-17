@@ -32,17 +32,21 @@ export default function UserControl({ myEmail, onChanged }) {
 
   const load = () => supabase.from('fms_users').select('*').order('created_at').then(({ data }) => setRows(data || []))
   useEffect(() => {
-    load()
-    if (!demo) {
-      supabase.rpc('fms_employee_list').then(({ data, error }) => {
-        if (error) setEmpErr(error.message)
-        else setEmps(data || [])
-      })
+    if (demo) {
+      // demo mode me DB access nahi hai — sample employees + logins taaki screen samajh aaye
+      fetch('/demo-users.json').then((r) => r.json()).then((d) => { setEmps(d.employees || []); setRows(d.logins || []) }).catch(() => setRows([]))
+      return
     }
+    load()
+    supabase.rpc('fms_employee_list').then(({ data, error }) => {
+      if (error) setEmpErr(error.message)
+      else setEmps(data || [])
+    })
     supabase.from('fms_collection').select('salesman').then(({ data }) => setSalesmen([...new Set((data || []).map((r) => r.salesman).filter(Boolean))].sort()))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(''), 5000) }
+  const demoBlock = () => { if (demo) flash('❌ Demo mode cannot save — use the real login'); return demo }
 
   // employee ↔ access row: pehle employee_id se, warna same email se
   const { empRows, others, depts } = useMemo(() => {
@@ -68,6 +72,7 @@ export default function UserControl({ myEmail, onChanged }) {
   }, [empRows, q, dept, showInactive])
 
   const setSalesman = async (u, sm) => {
+    if (demoBlock()) return
     const { error } = await supabase.from('fms_users').update({ salesman: sm || null }).eq('email', u.email)
     if (error) { flash('❌ ' + error.message); return }
     flash(sm ? `✅ ${u.email} → My Parties shows ${sm === '*' ? 'all salesmen' : sm + "'s parties"}` : '✅ Mapping removed — auto-match by name will be used')
@@ -97,6 +102,7 @@ export default function UserControl({ myEmail, onChanged }) {
 
   // shared / alag email wala login kisi employee se jodo (ek banda do jagah na dikhe)
   const linkEmployee = async (u, empId) => {
+    if (demoBlock()) return
     const { error } = await supabase.from('fms_users').update({ employee_id: empId ? Number(empId) : null }).eq('email', u.email)
     if (error) { flash('❌ ' + error.message); return }
     flash(empId ? `✅ ${u.email} linked to ${emps.find((x) => x.id === Number(empId))?.name}` : `✅ ${u.email} unlinked`)
@@ -104,6 +110,7 @@ export default function UserControl({ myEmail, onChanged }) {
   }
 
   const setTabs = async (u, key, on) => {
+    if (demoBlock()) return
     const tabs = on ? [...new Set([...(u.tabs || []), key])] : (u.tabs || []).filter((t) => t !== key)
     if (!tabs.length) { flash('❌ At least one tab must stay ticked'); return }
     const { error } = await supabase.from('fms_users').update({ tabs }).eq('email', u.email)
@@ -112,13 +119,23 @@ export default function UserControl({ myEmail, onChanged }) {
   }
 
   const setAdmin = async (u, on) => {
+    if (demoBlock()) return
     if (!on && u.email === me) { flash('❌ You cannot remove your own admin access'); return }
     const { error } = await supabase.from('fms_users').update({ is_admin: on }).eq('email', u.email)
     if (error) { flash('❌ ' + error.message); return }
     load(); onChanged?.()
   }
 
+  const setHoldApprover = async (u, on) => {
+    if (demoBlock()) return
+    const { error } = await supabase.from('fms_users').update({ can_approve_hold: on }).eq('email', u.email)
+    if (error) { flash('❌ ' + error.message); return }
+    flash(on ? `✅ ${u.email} can now Approve / Reject hold orders` : `✅ ${u.email} is no longer a hold approver`)
+    load(); onChanged?.()
+  }
+
   const removeUser = async (u) => {
+    if (demoBlock()) return
     if (u.email === me) { flash('❌ You cannot remove yourself'); return }
     if (!window.confirm(`Remove ${u.email} from the access list?\nThey will get default access (all tabs) again.`)) return
     const { error } = await supabase.from('fms_users').delete().eq('email', u.email)
@@ -143,6 +160,7 @@ export default function UserControl({ myEmail, onChanged }) {
         {u.salesman && u.salesman !== '*' && !salesmen.includes(u.salesman) && <option value={u.salesman}>{u.salesman}</option>}
       </select>
     </td>
+    <td className="uc-chk"><input type="checkbox" checked={!!u.can_approve_hold} onChange={(ev) => setHoldApprover(u, ev.target.checked)} /></td>
     <td className="uc-chk"><input type="checkbox" checked={!!u.is_admin} onChange={(ev) => setAdmin(u, ev.target.checked)} /></td>
     <td><button className="btn ghost sm" title="Remove from list (back to default access)" onClick={() => removeUser(u)}>🗑</button></td>
   </>)
@@ -152,6 +170,7 @@ export default function UserControl({ myEmail, onChanged }) {
         <th>{first}</th>
         {APP_TABS.map(([k, l]) => <th key={k}>{l}</th>)}
         <th title="ERP salesman whose parties this login sees in My Parties. Blank = auto-match by Google name / email">Salesman (My Parties)</th>
+        <th title="Can Approve / Reject hold orders in Today Work → Hold Approval">Hold approver</th>
         <th title="Admin sees this User Control tab and can change access">Admin</th>
         <th></th>
       </tr>
@@ -165,7 +184,7 @@ export default function UserControl({ myEmail, onChanged }) {
       <div className="action-head">
         <h2>👥 User Control — Tab Access</h2>
         <p className="muted small">Employees come from the Checklist &amp; Delegation admin (one user list for all apps) — add or rename people there. Here you only choose who can open this app and which tabs they see. Logins not in this list see all tabs (but never this one). Changes apply when the user refreshes or logs in again.</p>
-        {demo && <p className="err small">⚠️ Demo mode — employee list and changes are not available. Use the real login.</p>}
+        {demo && <p className="err small">⚠️ Demo mode — SAMPLE employees and logins; changes will not save. Use the real login.</p>}
         {msg && <p className="small"><b>{msg}</b></p>}
       </div>
 
@@ -197,14 +216,14 @@ export default function UserControl({ myEmail, onChanged }) {
                     </div>
                   </td>
                   {acc ? accessCells(acc) : (
-                    <td colSpan={APP_TABS.length + 3} className="muted small">
+                    <td colSpan={APP_TABS.length + 4} className="muted small">
                       Default (all tabs if they log in) ·{' '}
                       <button className="btn ghost sm" disabled={!e.email} title={e.email ? `Create an access row for ${e.email}` : 'Add an email in the Checklist admin first'} onClick={() => giveAccess(e)}>➕ Give access</button>
                     </td>
                   )}
                 </tr>
               ))}
-              {!shownEmps.length && <tr><td colSpan={APP_TABS.length + 4} className="muted">{emps.length ? 'No employee matches this filter.' : 'No employees loaded.'}</td></tr>}
+              {!shownEmps.length && <tr><td colSpan={APP_TABS.length + 5} className="muted">{emps.length ? 'No employee matches this filter.' : 'No employees loaded.'}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -229,7 +248,7 @@ export default function UserControl({ myEmail, onChanged }) {
                   {accessCells(u)}
                 </tr>
               ))}
-              {!others.length && <tr><td colSpan={APP_TABS.length + 4} className="muted">No other logins.</td></tr>}
+              {!others.length && <tr><td colSpan={APP_TABS.length + 5} className="muted">No other logins.</td></tr>}
             </tbody>
           </table>
         </div>

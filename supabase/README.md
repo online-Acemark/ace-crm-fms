@@ -120,3 +120,25 @@ Purana "Order To Delivery" Google Sheet source (registry 10, sources 95–97) 16
 - Score System me har Today Work section ka **alag source** hai (merge nahi): source 126 "Naya Order (Confirm)" →
   `score.v_o2d_confirm_mis`, 127 "Billing" → `v_o2d_billing_mis`, 128 "Dispatch" → `v_o2d_dispatch_mis`
   (teeno common view `v_o2d_today_work_mis` ko `step_no` se filter karte hain).
+
+## Hold Approval (table `fms_hold_cases`, migration `fms_hold_approval`) — "Hold SO System" sheet ki jagah
+
+ERP me hold pe rakhe SO ka case app me khulta hai; salesman commitment bharta hai, Deepak Kumar Sahu approve/reject
+karte hain. 19 Oct 2026 se (`fms_settings.hold_score.from`). Purana Google Sheet source (registry 8 "Hold Order System")
+cron `hold_sheet_off` se 19 Oct 00:00 IST ko band hota hai.
+
+- `fms-sync` har 30 min `PreclosedHoldorder.ashx` (hold SO list) + `HoldSo.ashx` (closing balance, PDC, credit limit,
+  remark → `fms_orders.hold_info`) padhta hai aur `rpc/fms_sync_hold_cases` bhejta hai: naya hold → case khulta hai
+  (`hold_seen_at`), list se hata → `released_at`. Hold list fail ho to cases ko chheda nahi jaata.
+- Ek SO ka ek hi open case. `commit_planned_at` = hold_seen + 1 office-ghanta (`fms_office_plus`: 10:30–19:30, working day).
+- Salesman (My Parties ka hold panel / Today Work → Hold Approval) `fms_hold_commit` se form bharta hai: committed
+  amount, date, payment through, reminder, "order on hold to be cleared?", remarks. Pehla commit `commit_at` lock karta
+  hai, `approve_planned_at` = commit + 1 office-ghanta, aur `fms_followups` me "Committed" entry banti hai (collection
+  follow-up commit date 11:00 IST).
+- Approve/Reject `fms_hold_decide` — sirf `fms_users.can_approve_hold = true` (User Control → "Hold approver").
+  Reject me reason zaroori.
+- Alerts (`fms-alerts`, `mode=hold` + instant mode): naye case par salesman ko Telegram DM (`public.users.telegram_chat_id`,
+  naam se match), commitment aane par approvers ko. Pehle FMS bot, na chale to Score System bot.
+- MIS Score (registry 27 "Hold Approval"): source 129 → `score.v_hold_commit_mis` (salesman, planned = commit_planned_at,
+  actual = commit_at), source 130 → `score.v_hold_approval_mis` (approver, planned = approve_planned_at, actual = decision_at).
+  SO-wise; release ho chuke case ke pending task bahar.

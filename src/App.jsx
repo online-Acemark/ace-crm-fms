@@ -181,7 +181,7 @@ export default function App() {
       </header>
       {msg && <div className="toast">{msg}</div>}
       <main>
-        {tab === 'action' && <ActionCenter orders={orders} stages={stages} scoring={scoring} stockTick={stockTick} onChanged={loadAll} />}
+        {tab === 'action' && <ActionCenter orders={orders} stages={stages} scoring={scoring} stockTick={stockTick} onChanged={loadAll} access={access} />}
         {tab === 'fms' && <Grid orders={orders} stages={stages} columns={columns} scoring={scoring} fupCounts={fupCounts} partyInfo={partyInfo} stockTick={stockTick} booting={booting} onChanged={loadAll} />}
         {tab === 'pendqty' && <PendingQty />}
         {tab === 'coll' && <Collection />}
