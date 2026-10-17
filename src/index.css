@@ -340,6 +340,14 @@ th.stage-h { border-left: 2px solid var(--stg-sep) !important; }
 .uc-tbl th:first-child, .uc-tbl td:first-child { text-align: left; }
 .uc-chk input { width: 16px; height: 16px; cursor: pointer; }
 .uc-note { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.uc-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.uc-head .uc-title { margin: 0; }
+.uc-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.uc-filters input[type="text"], .uc-filters input:not([type]) { min-width: 220px; }
+.uc-tbl tr.uc-inactive td { opacity: .6; }
+.uc-tbl td .tag { margin-left: 6px; }
+.uc-tbl select.uc-link { margin-top: 4px; }
+.panel .uc-add { margin-top: 10px; }
 
 /* ERP OrderStatus badge (OK / Product changed at SO) */
 .ost-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; white-space: nowrap; }
