@@ -1,6 +1,7 @@
 // FMS instant alerts (Telegram):
 //  mode=instant (default, har 30 min sync ke baad): naya order aaya + confirm late
 //  mode=dispatch (roz 2 PM): aaj ke pending dispatch ka reminder
+//  mode=zero (Mon–Sat 7:30 PM): Today Work zero report
 // Har SO ka alert ek hi baar jata hai — fms_alert_log me record hota hai.
 const IST = 5.5 * 3600 * 1000;
 const H = 3600 * 1000;
@@ -209,6 +210,146 @@ async function holdAlerts() {
   return { hold_new: sentNew, hold_approve: sentApprove };
 }
 
+// ---------- Shaam ki "Today Work zero?" report (mode=zero, Mon–Sat 7:30 PM) ----------
+// App ke Today Work jaisa hi hisaab (ActionCenter): confirm / billing (stock + billable) / dispatch (bill-wise) / hold;
+// saath me Maahi ki aaj ki collection calls, aaj ke Today Work tasks ka on-time hisaab, aur contact safai (ginti me nahi).
+// Kise: fms_settings.zero_report.to_user (public.users id) ho to us user ko DM, warna FMS group.
+const BILL_CUT_H = 16;
+function billingDueSrv(base: Date) { // app/fms-sync jaisa: 4 PM se pehle + working day -> usi din 4 PM, warna agle working din
+  const cut = new Date(base); cut.setHours(BILL_CUT_H, 0, 0, 0);
+  const day = isWorkingDay(base) && base <= cut ? new Date(base) : nextWorkingDay(base);
+  day.setHours(BILL_CUT_H, 0, 0, 0);
+  return day;
+}
+const ageTxt = (h: number) => (h >= 48 ? `${Math.floor(h / 24)} din` : h >= 1 ? `${Math.floor(h)}h ${Math.round((h % 1) * 60)}m` : `${Math.max(0, Math.round(h * 60))}m`);
+const pKey = (s: unknown) => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+async function zeroReport(force: boolean) {
+  const now = nowIST();
+  if (!force && !isWorkingDay(now)) return { sent: false, note: "chhutti — report nahi" };
+  const [orders, holds, erpRow, cfgRow, coll, fupsToday, tasks] = await Promise.all([
+    sbAll("fms_orders?select=mobile_so_no,account_name,salesman,mobile_so_created,so_convert_date,billing_date,desp_date,on_hold,sorder_amount,mobile_so_amount,bills,products,preclosed,bills_payment,synced_at,contact_person,contact_person2,email_id,email_id2,contact_manual,payment_complete,pay_status&cancelled=eq.false&order=mobile_so_no"),
+    sbAll("fms_hold_cases?select=id,party,so_no,mobile_so_no,commit_at,decision&released_at=is.null&order=id"),
+    sb("fms_settings?key=eq.erp&select=value"),
+    sb("fms_settings?key=eq.zero_report&select=value"),
+    sbAll("fms_collection?select=party_name,next_followup_date,permanent_note,total_pending,ledger_balance&order=party_name"),
+    sbAll(`fms_followups?select=party_name,mode,stage,created_at&created_at=gte.${new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - IST).toISOString()}&order=id`),
+    sbAll(`fms_today_tasks?select=kind,planned_at,actual_at&planned_at=gte.${new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - IST).toISOString()}&planned_at=lt.${new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 1) - IST).toISOString()}&order=task_key`).catch(() => []),
+  ]);
+  const cfg = cfgRow?.[0]?.value || {};
+
+  // stock (billing list sirf stock wale) — ERP na mile to sabko gino (app bhi yahi karta hai)
+  let stock: Record<string, number> | null = null;
+  try {
+    const r = await fetch(erpRow?.[0]?.value?.stock_url || "http://eksai12.ddns.net:8786/ek_api/telegramApi/ProductStock.ashx", { signal: AbortSignal.timeout(90000) });
+    const j = await r.json(); const rows = Array.isArray(j) ? j : j?.DataRec || [];
+    stock = {}; for (const x of rows) if (x.ProductCode) stock[String(x.ProductCode).trim().toLowerCase()] = Number(x.Total) || 0;
+  } catch (_e) { stock = null; }
+
+  const maxSync = orders.reduce((m: string, o: any) => (o.synced_at && o.synced_at > m ? o.synced_at : m), "");
+  const confirm: string[] = [], billing: string[] = [], dispatch: { h: number; line: string }[] = [];
+  let nConfirm = 0, nBilling = 0;
+  const unbilled = (o: any) => (o.products || []).filter((p: any) => Number(p.qty) > 0 && p.bno == null);
+  for (const o of orders) {
+    const amt = inr(o.sorder_amount || o.mobile_so_amount);
+    if (!o.so_convert_date) {
+      nConfirm++;
+      const c = d(o.mobile_so_created); const pl = soConvertPlanned(c);
+      const gone = o.synced_at && maxSync && new Date(maxSync).getTime() - new Date(o.synced_at).getTime() > 2 * H;
+      if (confirm.length < 5) confirm.push(`- #${o.mobile_so_no} ${o.account_name} | ${amt}${pl && now > pl ? ` | ${ageTxt((now.getTime() - pl.getTime()) / H)} late` : ""}${gone ? " | ERP feed me nahi — cancel check karo" : ""}`);
+      continue;
+    }
+    if (!o.billing_date && !o.on_hold) {
+      const ub = unbilled(o);
+      const stockOk = !stock || ub.every((p: any) => { const s = stock![String(p.code || "").trim().toLowerCase()]; return s != null && s >= Number(p.qty); });
+      const pre: Record<string, number> = {};
+      for (const pc of o.preclosed || []) { const k = String(pc.name || "").trim().toLowerCase(); pre[k] = (pre[k] || 0) + (Number(pc.reset) || 0); }
+      const billable = !ub.length || ub.some((p: any) => (pre[String(p.name || "").trim().toLowerCase()] || 0) < Number(p.qty));
+      const conv = d(o.so_convert_date)!;
+      const due = billingDueSrv(conv);
+      const partial = (o.bills || []).length > 0;
+      if (stockOk && billable && (partial || now > due)) {
+        nBilling++;
+        if (billing.length < 5) billing.push(`- #${o.mobile_so_no} ${o.account_name} | ${amt} | target ${dmyIST(new Date(due.getTime() - IST).toISOString())} | ${ageTxt((now.getTime() - due.getTime()) / H)} late`);
+      }
+    }
+    if (!o.on_hold && !o.desp_date) {
+      for (const b of billsOf(o)) {
+        if (b.status === "dispatched") continue;
+        const bd = d(b.billing_date); const h = bd ? (now.getTime() - bd.getTime()) / H : 0;
+        dispatch.push({ h, line: `- Bill ${b.bill_no} ${o.account_name} | ${inr(b.amount)} | ${BILL_TXT[b.status] || b.status} | bill bane ${ageTxt(h)}` });
+      }
+    }
+  }
+  dispatch.sort((a, b) => b.h - a.h);
+
+  const holdOpen = holds.filter((c: any) => !c.decision);
+  const holdCommit = holdOpen.filter((c: any) => !c.commit_at).length, holdApprove = holdOpen.length - holdCommit;
+
+  // Maahi: aaj tak ki due calls (Collection list: permanent note / ledger difference wale bahar) — aaj call hui ya nahi
+  const calledToday = new Set(fupsToday.filter((f: any) => f.mode !== "whatsapp" && f.mode !== "hold_form").map((f: any) => pKey(f.party_name)));
+  const dayEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 1) - IST);
+  const dueColl = coll.filter((p: any) => !p.permanent_note && p.next_followup_date && new Date(p.next_followup_date) < dayEnd
+    && !(p.ledger_balance != null && Math.round(Number(p.total_pending) - Number(p.ledger_balance)) !== 0));
+  const collLeft = dueColl.filter((p: any) => !calledToday.has(pKey(p.party_name))).length;
+
+  // Contact safai: party jiska koi field kisi bhi order me nahi bhara (unpaid parties)
+  const pc = new Map<string, Record<string, string>>(); const unpaidP = new Set<string>();
+  for (const o of orders) {
+    const k = pKey(o.account_name); if (!k) continue;
+    const m = pc.get(k) || {}; const man = o.contact_manual || {};
+    for (const f of ["contact_person", "contact_person2", "email_id", "email_id2"]) if (!m[f] && (man[f] || o[f])) m[f] = man[f] || o[f];
+    pc.set(k, m);
+    if (!(o.payment_complete || o.pay_status === "Full")) unpaidP.add(k);
+  }
+  const contactLeft = [...unpaidP].filter((k) => { const m = pc.get(k) || {}; return !m.contact_person || !m.contact_person2 || !m.email_id || !m.email_id2; }).length;
+
+  // aaj planned Today Work tasks (Ahmad ka score): kitne on time / late / baaki
+  const tstat: Record<string, { on: number; late: number; left: number }> = {};
+  for (const t of tasks as any[]) {
+    const s = tstat[t.kind] || (tstat[t.kind] = { on: 0, late: 0, left: 0 });
+    if (!t.actual_at) s.left++; else if (new Date(t.actual_at) <= new Date(t.planned_at)) s.on++; else s.late++;
+  }
+  const KIND: Record<string, string> = { confirm: "Confirm", billing: "Billing", dispatch: "Dispatch" };
+
+  const left = nConfirm + nBilling + dispatch.length + holdOpen.length;
+  const L = [
+    `TODAY WORK REPORT — ${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} ${hm(now)}`,
+    left === 0 ? "Status: ZERO — aaj ka saara kaam ho gaya" : `Status: ZERO NAHI HUA — ${left} kaam baaki`,
+    "",
+    `Naye Orders (confirm): ${nConfirm}`, ...confirm,
+    `Billing Pending: ${nBilling}${stock ? "" : " (stock data nahi mila — sab gine)"}`, ...billing,
+    `Dispatch Due: ${dispatch.length} bill${dispatch.filter((x) => x.h > 72).length ? ` (${dispatch.filter((x) => x.h > 72).length} bill 3 din se purane)` : ""}`, ...dispatch.slice(0, 5).map((x) => x.line),
+    `Hold Approval: ${holdOpen.length} (commitment baaki ${holdCommit}, approval baaki ${holdApprove})`,
+    "",
+    `Collection calls (Maahi): aaj tak ki ${dueColl.length} due me se ${collLeft} baaki`,
+    Object.keys(tstat).length
+      ? `Aaj ke tasks: ${Object.entries(tstat).map(([k, s]) => `${KIND[k] || k} ${s.on + s.late + s.left} (on time ${s.on}, late ${s.late}, baaki ${s.left})`).join(" | ")}`
+      : "",
+    `Contact data adhura: ${contactLeft} party (safai ka kaam, ginti me nahi)`,
+    `App: ${APP_URL}`,
+  ].filter((x, i, a) => x !== "" || (a[i - 1] !== "" && i > 0));
+  const text = L.join("\n");
+
+  const toUser = cfg.to_user;
+  if (toUser) {
+    const [users, tgRow, ss] = await Promise.all([
+      sb(`users?select=id,telegram_chat_id&id=eq.${Number(toUser)}`),
+      sb("fms_settings?key=eq.telegram&select=value"),
+      sb("rpc/ss_secrets", { method: "POST", headers: { "Content-Profile": "score" }, body: "{}" }).catch(() => ({})),
+    ]);
+    const chat = String(users?.[0]?.telegram_chat_id || "").trim();
+    if (!chat) return { sent: false, note: "to_user ki chat id nahi" };
+    for (const tok of [tgRow?.[0]?.value?.token, (ss as any)?.TELEGRAM_BOT_TOKEN, Deno.env.get("TELEGRAM_BOT_TOKEN")].filter(Boolean)) {
+      const r = await fetch(`https://api.telegram.org/bot${tok}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chat, text: text.slice(0, 4000) }) });
+      if ((await r.json()).ok) return { sent: true, to: `user ${toUser}`, left, text };
+    }
+    return { sent: false, note: "DM nahi gaya", text };
+  }
+  await sendTG(text);
+  return { sent: true, to: "group", left, text };
+}
+
 Deno.serve(async (req) => {
   try {
     let mode = new URL(req.url).searchParams.get("mode") || "";
@@ -236,6 +377,14 @@ Deno.serve(async (req) => {
         out.push({ id: u.id, user: u.user_name, reachable_by: ok });
       }
       return new Response(JSON.stringify({ ok: true, bots: bots.filter((b) => b[1]).map((b) => b[0]), users: out }), { headers: { "Content-Type": "application/json" } });
+    }
+
+    if (mode === "zero") {
+      const [wd, hd] = await Promise.all([sbAll("working_day_calender?select=working_date&order=working_date"), sb("holidays?select=holiday_date")]);
+      const hs = new Set((hd || []).map((r: any) => r.holiday_date));
+      workingDaySet = new Set((wd || []).map((r: any) => r.working_date).filter((x: string) => !hs.has(x)));
+      const r = await zeroReport(new URL(req.url).searchParams.get("force") === "1");
+      return new Response(JSON.stringify({ ok: true, ...r }), { headers: { "Content-Type": "application/json" } });
     }
 
     if (mode === "hold") {

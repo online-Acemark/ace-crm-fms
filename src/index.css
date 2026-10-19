@@ -877,3 +877,7 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .hold-act .fld-row { margin-top: 6px; flex-wrap: wrap; }
 .hold-panel { border-left: 3px solid var(--amber); }
 .coll-detail .hold-form { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; }
+
+/* Today Work -> Contact Data Adhura: party-wise fill boxes */
+.contact-fill { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 260px; }
+.contact-fill input { width: 130px; padding: 4px 6px; font-size: 12px; }

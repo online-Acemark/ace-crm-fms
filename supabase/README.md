@@ -171,3 +171,19 @@ Poora delete karne ke steps:
 4. `src/index.css` me sirf Grid wali classes (build ke baad unused) hatao.
 5. DB: `update fms_users set tabs = array_remove(tabs, 'fms');`
 `OrderDrawer` / `FollowupModal` / `lib/fms.js` Today Work bhi use karta hai — inhe mat hatana.
+
+## Today Work: Contact Data Adhura (party-wise) — 19 Oct 2026
+
+Contact party ka hota hai, order ka nahi. Section me ab **ek row = ek party** (party ka sabse naya unpaid order); koi field
+party ke kisi bhi order me bhara ho to bhara maana jaata hai. Row me hi khali fields ke box hain — Save =
+`rpc/fms_set_party_contact(p_party, p_patch)` party ke SAARE `fms_orders.contact_manual` me merge karta hai (security
+invoker, sirf contact_person / contact_person2 / email_id / email_id2 / mobile_no2). Today Work ke total me nahi ginta.
+
+## Shaam ki zero report (`fms-alerts?mode=zero`, cron `fms-zero-report` Mon–Sat 7:30 PM IST)
+
+App ke Today Work jaisa hisaab server par: Naye Orders, Billing Pending (stock + billable, target nikal gaya ho ya
+partial), Dispatch Due (bill-wise, 3 din se purane alag), Hold Approval (commitment / approval baaki) — har section ke
+top 5 kaam. Saath me: Maahi ki aaj tak ki due collection calls me se kitni baaki, aaj planned Today Work tasks
+(`fms_today_tasks`) ka on time / late / baaki, aur contact safai (party count, ginti me nahi). Chhutti ke din nahi jaati
+(`&force=1` se test). Kise: `fms_settings.zero_report.to_user` (public.users id; abhi 25 = Mahendra, testing) — ise hata do
+to FMS group (`fms_settings.telegram.chat_id`) me jayegi.

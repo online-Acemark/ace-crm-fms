@@ -1,9 +1,42 @@
 import { useMemo, useState } from 'react'
-import { computePipeline, fmtDelay, fmtERP, resolveContact, contactMissing, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue, changedLines, getStockMap, billStatuses, billDispatchDelay, BILL_STATUS } from '../lib/fms'
+import { supabase } from '../lib/supabase'
+import { computePipeline, fmtDelay, fmtERP, resolveContact, buildStatusMsg, waLink, noFollowup, logWaSend, isPaid, paymentDue, changedLines, getStockMap, billStatuses, billDispatchDelay, BILL_STATUS } from '../lib/fms'
 import OrderDrawer from './OrderDrawer'
 import FollowupModal from './FollowupModal'
 import MultiSelect from './MultiSelect'
 import HoldApproval, { useHoldCases } from './HoldApproval'
+
+const CONTACT_FIELDS = [['contact_person', 'Person 1'], ['contact_person2', 'Person 2'], ['email_id', 'Email 1'], ['email_id2', 'Email 2']]
+const partyKey = (o) => String(o.account_name || '').trim().replace(/\s+/g, ' ').toLowerCase()
+
+// Contact Data Adhura: party ke jo field kisi bhi order me nahi bhare — yahin type karo, Save = party ke saare orders me
+function PartyContactFill({ o, pc, onSaved }) {
+  const demo = new URLSearchParams(window.location.search).has('demo')
+  const [v, setV] = useState({})
+  const [msg, setMsg] = useState('')
+  const [saving, setSaving] = useState(false)
+  const missing = CONTACT_FIELDS.filter(([f]) => !pc[f])
+  const save = async () => {
+    const patch = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, String(x || '').trim()]).filter(([, x]) => x))
+    if (!Object.keys(patch).length) { setMsg('Type at least one value'); return }
+    if (demo) { setMsg('Demo mode cannot save'); return }
+    setSaving(true); setMsg('')
+    const { data, error } = await supabase.rpc('fms_set_party_contact', { p_party: o.account_name, p_patch: patch })
+    setSaving(false)
+    if (error) { setMsg(error.message); return }
+    setV({}); setMsg(`✔ Saved on ${data} orders`); onSaved?.()
+  }
+  return (
+    <div className="contact-fill">
+      {missing.map(([f, l]) => (
+        <input key={f} type={f.startsWith('email') ? 'email' : 'text'} placeholder={`+ ${l}`} value={v[f] || ''}
+          onChange={(e) => setV({ ...v, [f]: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && save()} />
+      ))}
+      <button className="btn primary sm" onClick={save} disabled={saving}>{saving ? '⏳' : '💾 Save'}</button>
+      {msg && <span className="small muted">{msg}</span>}
+    </div>
+  )
+}
 
 const SECTIONS = [
   {
@@ -28,7 +61,7 @@ const SECTIONS = [
   },
   {
     key: 'contact', icon: '📇', title: 'Contact Data Adhura — Bharo',
-    how: 'Client se baat ho tab puch lo: dusre contact person ka naam & email. FMS Grid me dotted box me hi type kar do — apne aap save ho jayega.',
+    how: 'One row per party (not per order). When you talk to the party, ask for the missing contact person / email and type it in the boxes — Save fills it on ALL orders of that party. Clean-up work: not counted in the Today Work total.',
   },
 ]
 
@@ -100,6 +133,14 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
 
   const tasks = useMemo(() => {
     const t = { confirm: [], billing: [], dispatch: [], hold: [], payment: [], contact: [] }
+    // Contact party-level: har field kisi bhi order me bhara ho to party ka maana; row = party ka sabse naya unpaid order
+    const pContact = new Map(), pLatest = new Map()
+    for (const o of orders) {
+      const k = partyKey(o); if (!k) continue
+      const c = resolveContact(o); const m = pContact.get(k) || {}
+      for (const [f] of CONTACT_FIELDS) if (!m[f] && c[f]) m[f] = c[f]
+      pContact.set(k, m)
+    }
     for (const o of orders) {
       const pipe = computePipeline(o, stages, scoring)
       if (!o.so_convert_date) t.confirm.push({ o, pipe, d: pipe.so_convert?.delayH })
@@ -120,7 +161,11 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
           t.payment.push({ o, pipe, b, d: due && nowT > due.getTime() ? (nowT - due.getTime()) / 36e5 : null, fupDue })
         } else t.payment.push({ o, pipe, d: pipe.payment?.delayH, fupDue })
       }
-      if (contactMissing(o) && !isPaid(o)) t.contact.push({ o, pipe })
+      if (!isPaid(o)) { const k = partyKey(o); const cur = pLatest.get(k); if (k && (!cur || Number(o.mobile_so_no) > Number(cur.o.mobile_so_no))) pLatest.set(k, { o, pipe }) }
+    }
+    for (const [k, row] of pLatest) {
+      const pc = pContact.get(k) || {}
+      if (CONTACT_FIELDS.some(([f]) => !pc[f])) t.contact.push({ ...row, pc })
     }
     // G = Golden customer, pehli priority — har section me sabse upar; uske baad zyada delay wale
     const isG = (o) => String(o.acc_family || '').trim().toUpperCase() === 'G'
@@ -210,7 +255,7 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map(({ o, pipe, b, d, fupDue }) => {
+                  {list.map(({ o, pipe, b, d, fupDue, pc }) => {
                     const c = resolveContact(o)
                     const wa = waLink(o.mobile_no, buildStatusMsg(o, pipe))
                     const due = paymentDue(b ? b.billing_date : o.billing_date, o.credit_days)
@@ -267,11 +312,13 @@ export default function ActionCenter({ orders, stages, scoring, stockTick, onCha
                             return <>{fupDue && <b className="amber-t">📅 Follow-up aaj due · </b>}Due: {due ? due.toLocaleDateString('en-IN') : '—'} · <b>Baaki ₹{baaki.toLocaleString('en-IN')}</b>{part && <span className="amber-t"> (Part paid{b && b.received > 0 ? ` · ₹${b.received.toLocaleString('en-IN')} aaya` : ''})</span>}
                               {overdueDays > 0 && <span className={`age-chip ${bucket}`}>{overdueDays > 30 ? '🔴' : overdueDays > 7 ? '🟠' : '🟡'} {overdueDays}d overdue</span>}</>
                           })()}
-                          {sec.key === 'contact' && <span className="muted">Missing: {[!c.contact_person && 'Person 1', !c.contact_person2 && 'Person 2', !c.email_id && 'Email 1', !c.email_id2 && 'Email 2'].filter(Boolean).join(', ')}</span>}
+                          {sec.key === 'contact' && <span className="muted">Missing: {CONTACT_FIELDS.filter(([f]) => !pc[f]).map(([, l]) => l).join(', ')}
+                            {CONTACT_FIELDS.some(([f]) => pc[f]) && <div>Have: {CONTACT_FIELDS.filter(([f]) => pc[f]).map(([f, l]) => `${l}: ${pc[f]}`).join(' · ')}</div>}</span>}
                         </td>
                         <td>{d != null && d > 0 && <span className="red-t"><b>⏰ {fmtDelay(d)} late</b></span>}</td>
                         <td>
                           {sec.key === 'payment' && <button className="btn primary sm" onClick={() => setFupOrder(o)}>📝 Follow-up</button>}
+                          {sec.key === 'contact' && <PartyContactFill o={o} pc={pc} onSaved={onChanged} />}
                           {wa && sec.key !== 'contact' && <a className="wa-btn" href={wa} target="_blank" rel="noreferrer"
                             onClick={() => logWaSend(o, 'WhatsApp status bheja').then(() => onChanged?.())}>📤 Status</a>}
                         </td>
