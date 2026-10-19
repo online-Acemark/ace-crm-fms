@@ -133,6 +133,49 @@ async function holdAlerts() {
   const info = new Map(infoRows.map((r: any) => [r.mobile_so_no, r.hold_info || {}]));
   const patch = (id: number, body: any) => sb(`fms_hold_cases?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(body) });
 
+  // TEST mode (hold_score.test_user = public.users id): har alert sirf us user ko, upar likha "asli me kise jaata".
+  // Asli salesman_alerted_at / approver_alerted_at nahi chhedte — live karne par salesman ko phir bhi jayega.
+  // Ek case ka test alert ek hi baar (fms_alert_log: so_no = 'hold:<case id>').
+  const testUser = cfg?.[0]?.value?.test_user;
+  if (testUser) {
+    const chat = chatOfEmp(Number(testUser));
+    if (!chat) return { hold_new: 0, hold_approve: 0, note: "test_user ki chat id nahi" };
+    const logRows = await sbAll(`fms_alert_log?select=so_no,alert_type&so_no=like.hold:*&order=so_no`);
+    const done = new Set(logRows.map((r: any) => r.so_no + "|" + r.alert_type));
+    const log = (c: any, type: string) => sb("fms_alert_log?on_conflict=so_no,alert_type", { method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=minimal" }, body: JSON.stringify([{ so_no: `hold:${c.id}`, alert_type: type }]) });
+    let tNew = 0, tApprove = 0;
+    for (const c of fresh) {
+      if (done.has(`hold:${c.id}|hold_test_new`)) continue;
+      const hi: any = info.get(c.mobile_so_no) || {};
+      const text = [
+        `[TEST] Asli me jayega: ${c.salesman || "-"} (chat id ${chatOfName(c.salesman) ? "hai" : "NAHI"})`,
+        `HOLD ORDER — party se baat karke commitment bharo`,
+        `Party: ${c.party || ""}`,
+        `SO: ${c.so_no || ""} (#${c.mobile_so_no}) | ${inr(c.amount)}`,
+        `Closing balance: ${inr(hi.closing_balance)} | PDC: ${inr(hi.pdc_amount)} | Credit limit: ${inr(hi.credit_limit)}`,
+        hi.remarks ? `Remark: ${hi.remarks}` : "",
+        `Target: ${dmyIST(c.commit_planned_at)} tak`,
+        `App: My Parties -> Hold commitment`,
+      ].filter(Boolean).join("\n");
+      if (await dm(chat, text)) { await log(c, "hold_test_new"); tNew++; }
+    }
+    for (const c of toApprove) {
+      if (done.has(`hold:${c.id}|hold_test_approve`)) continue;
+      const names = (approvers || []).map((a: any) => users.find((u: any) => u.id === a.employee_id)?.user_name || a.email).join(", ");
+      const text = [
+        `[TEST] Asli me jayega: ${names || "-"} (approver)`,
+        `HOLD APPROVAL PENDING`,
+        `Party: ${c.party || ""} | SO: ${c.so_no || ""} (#${c.mobile_so_no}) | ${inr(c.amount)}`,
+        `Commitment: ${inr(c.commit_amount)} by ${c.commit_date || ""} | ${c.pay_through || ""} | Reminder: ${c.reminder ? "Yes" : "No"}`,
+        c.remarks ? `Remark: ${c.remarks}` : "",
+        `Salesman: ${c.salesman || ""} | Target: ${dmyIST(c.approve_planned_at)} tak`,
+        `App: Today Work -> Hold Approval`,
+      ].filter(Boolean).join("\n");
+      if (await dm(chat, text)) { await log(c, "hold_test_approve"); tApprove++; }
+    }
+    return { test_user: testUser, hold_new: tNew, hold_approve: tApprove };
+  }
+
   let sentNew = 0, sentApprove = 0;
   for (const c of fresh) {
     const chat = chatOfName(c.salesman);
