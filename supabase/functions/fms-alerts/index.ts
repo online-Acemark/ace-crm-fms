@@ -94,6 +94,7 @@ const sendTG = async (text: string) => {
 // Naya hold -> us party ke SALESMAN ko (commitment bharo); commitment aate hi APPROVER (Deepak) ko.
 // Chat id master user list (public.users.telegram_chat_id) se. Pehle FMS bot, na chale to Score System bot
 // (chat id kisi bhi bot ka ho sakta hai — jis bot ko user ne /start kiya hai wahi DM bhej sakta hai).
+const APP_URL = Deno.env.get("FMS_APP_URL") || "https://ace-crm-fms.vercel.app"; // ?hold=<case id> = seedha commitment form
 const normPerson = (s: unknown) => String(s || "").toLowerCase().replace(/\s*\(.*\)\s*$/, "").replace(/[.]+$/, "").replace(/\s+/g, " ").trim();
 const dmyIST = (v: unknown) => { const t = d(v); return t ? `${String(t.getDate()).padStart(2, "0")}/${String(t.getMonth() + 1).padStart(2, "0")} ${hm(t)}` : ""; };
 async function holdAlerts() {
@@ -155,7 +156,7 @@ async function holdAlerts() {
         `Closing balance: ${inr(hi.closing_balance)} | PDC: ${inr(hi.pdc_amount)} | Credit limit: ${inr(hi.credit_limit)}`,
         hi.remarks ? `Remark: ${hi.remarks}` : "",
         `Target: ${dmyIST(c.commit_planned_at)} tak`,
-        `App: My Parties -> Hold commitment`,
+        `Commitment bharo: ${APP_URL}/?hold=${c.id}`,
       ].filter(Boolean).join("\n");
       if (await dm(chat, text)) { await log(c, "hold_test_new"); tNew++; }
     }
@@ -169,7 +170,7 @@ async function holdAlerts() {
         `Commitment: ${inr(c.commit_amount)} by ${c.commit_date || ""} | ${c.pay_through || ""} | Reminder: ${c.reminder ? "Yes" : "No"}`,
         c.remarks ? `Remark: ${c.remarks}` : "",
         `Salesman: ${c.salesman || ""} | Target: ${dmyIST(c.approve_planned_at)} tak`,
-        `App: Today Work -> Hold Approval`,
+        `Approve / Reject: ${APP_URL} (Today Work -> Hold Approval)`,
       ].filter(Boolean).join("\n");
       if (await dm(chat, text)) { await log(c, "hold_test_approve"); tApprove++; }
     }
@@ -188,7 +189,7 @@ async function holdAlerts() {
       `Closing balance: ${inr(hi.closing_balance)} | PDC: ${inr(hi.pdc_amount)} | Credit limit: ${inr(hi.credit_limit)}`,
       hi.remarks ? `Remark: ${hi.remarks}` : "",
       `Target: ${dmyIST(c.commit_planned_at)} tak`,
-      `App: My Parties -> Hold commitment`,
+      `Commitment bharo: ${APP_URL}/?hold=${c.id}`,
     ].filter(Boolean).join("\n");
     if (await dm(chat, text)) { await patch(c.id, { salesman_alerted_at: new Date().toISOString() }); sentNew++; }
   }
@@ -199,7 +200,7 @@ async function holdAlerts() {
       `Commitment: ${inr(c.commit_amount)} by ${c.commit_date || ""} | ${c.pay_through || ""} | Reminder: ${c.reminder ? "Yes" : "No"}`,
       c.remarks ? `Remark: ${c.remarks}` : "",
       `Salesman: ${c.salesman || ""} | Target: ${dmyIST(c.approve_planned_at)} tak`,
-      `App: Today Work -> Hold Approval`,
+      `Approve / Reject: ${APP_URL} (Today Work -> Hold Approval)`,
     ].filter(Boolean).join("\n");
     let any = false;
     for (const a of approvers || []) { const chat = chatOfEmp(a.employee_id); if (chat && await dm(chat, text)) any = true; }

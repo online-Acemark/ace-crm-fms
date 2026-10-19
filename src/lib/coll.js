@@ -140,9 +140,13 @@ export function buildAgg(fups, receipts) {
     const k = normKey(f.party_name); if (!k) continue
     const a = get(k)
     if (f.mode === 'whatsapp') { a.waCount++; continue }
-    a.entries.push(f); a.count++
-    if (!a.last) { a.last = f; a.lastStage = f.stage || '' }
-    if (String(f.created_at || '').slice(0, 10) === today) a.doneToday = true
+    a.entries.push(f)
+    // hold_form (Hold SO sheet import) history + commitment me dikhta hai, par last call / stage / ginti nahi badalta
+    if (f.mode !== 'hold_form') {
+      a.count++
+      if (!a.last) { a.last = f; a.lastStage = f.stage || '' }
+      if (String(f.created_at || '').slice(0, 10) === today) a.doneToday = true
+    }
     if (!a.committed && f.committed_date) a.committed = { amount: Number(f.committed_amount) || 0, date: f.committed_date, at: f.created_at, by: f.created_by }
     if (!a.transferTo && f.transfer_to) { a.transferTo = f.transfer_to; a.transferReason = f.transfer_reason || '' }
     if (Number(f.amount_received) > 0) {
@@ -198,7 +202,7 @@ export function scoreFollowups(fups, cfg = SCORE_DEFAULTS, today = isoDay()) {
   const c = { ...SCORE_DEFAULTS, ...(cfg || {}) }
   const byParty = new Map()
   for (const f of fups) {
-    if (f.mode === 'whatsapp') continue
+    if (f.mode === 'whatsapp' || f.mode === 'hold_form') continue   // hold_form = Hold SO sheet ka import — score me nahi
     const k = normKey(f.party_name); if (!k) continue
     if (!byParty.has(k)) byParty.set(k, [])
     byParty.get(k).push(f)

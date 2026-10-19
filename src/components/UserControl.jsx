@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 // access fms_users me save hota hai (login email + tabs), employee_id se employee se juda.
 export const APP_TABS = [
   ['action', 'Today Work'],
-  ['fms', 'FMS Grid'],
+  // ['fms', 'FMS Grid'],   // HIDDEN 19 Oct 2026 (owner ke kehne par) — delete ka tareeka: supabase/README.md "FMS Grid (hidden)"
   ['pendqty', 'Pending Order'],
   ['coll', 'Collection'],
   ['sales', 'My Parties'],

@@ -101,6 +101,35 @@ export function HoldCommitForm({ hc, onDone, onCancel }) {
   )
 }
 
+// Telegram link (?hold=<case id>): login ke baad kisi bhi tab par seedha us order ka commitment form
+export function HoldLinkModal({ caseId, onClose }) {
+  const demo = new URLSearchParams(window.location.search).has('demo')
+  const [hc, setHc] = useState(undefined)   // undefined = loading, null = nahi mila
+  const [done, setDone] = useState('')
+  useEffect(() => {
+    if (demo) { setHc(DEMO_CASES.find((c) => String(c.id) === String(caseId)) || DEMO_CASES[0]); return }
+    supabase.from('fms_hold_cases').select('*').eq('id', Number(caseId) || 0).maybeSingle().then(({ data }) => setHc(data || null))
+  }, [caseId, demo])
+  const note = hc === null ? 'This hold order link is not valid.'
+    : hc?.released_at ? `${hc.so_no || '#' + hc.mobile_so_no} is no longer on hold in ERP — nothing to fill.`
+    : hc?.decision ? `${hc.so_no || '#' + hc.mobile_so_no} is already ${hc.decision.toLowerCase()}${hc.decision_reason ? ` (${hc.decision_reason})` : ''}.`
+    : done
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal hold-modal" onClick={(ev) => ev.stopPropagation()}>
+        {hc === undefined ? <p className="muted">⏳ Loading…</p>
+          : note ? (
+            <div className="hold-form">
+              <b>{note}</b>
+              <div className="fld-row"><button className="btn primary" onClick={onClose}>OK</button></div>
+            </div>
+          )
+          : <HoldCommitForm hc={hc} onCancel={onClose} onDone={setDone} />}
+      </div>
+    </div>
+  )
+}
+
 // Today Work -> Hold Approval table (Step 1 + Step 2)
 export default function HoldApproval({ cases, orders, access, q = '', fSalesman = '', onChanged, onOpenOrder }) {
   const demo = new URLSearchParams(window.location.search).has('demo')

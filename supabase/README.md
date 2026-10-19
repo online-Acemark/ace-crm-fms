@@ -147,3 +147,27 @@ cron `hold_sheet_off` se 19 Oct 00:00 IST ko band hota hai.
 - MIS Score (registry 27 "Hold Approval"): source 129 → `score.v_hold_commit_mis` (salesman, planned = commit_planned_at,
   actual = commit_at), source 130 → `score.v_hold_approval_mis` (approver, planned = approve_planned_at, actual = decision_at).
   SO-wise; release ho chuke case ke pending task bahar.
+
+## Hold SO sheet "Form Responses 2" import (19 Oct 2026)
+
+Purani Google Form ki 165 hold commitments (Jan–Oct 2026) `fms_followups` me daali gayi: `mode = 'hold_form'`,
+`stage = 'Committed'`, `created_at` = form ka timestamp, `created_by` = salesman email (sheet ke FMS tab se), party = SO
+ka AccountName (sheet FMS tab, warna `fms_orders.sorder_no`). Amount ki jagah text likha tha to wo remarks me
+("Amount: ..."). Chhodi gayi: 5 test rows + 5 SO jinki party sheet me nahi (22146, 22179, 22180, 22334, 22862).
+- Collection / My Parties me party ki history + current commitment (aur "Broken promise") me dikhti hain.
+- `hold_form` rows follow-up ginti / last stage / Maahi ka MIS score (`score.v_crm_collection_followup_mis`) / app ka
+  follow-up score nahi badalti (`src/lib/coll.js`, `Collection.jsx` pulse).
+- Wapas hatana ho to: `delete from fms_followups where mode = 'hold_form';`
+
+## FMS Grid (hidden, delete baad me)
+
+19 Oct 2026 se FMS Grid tab chhupa hai: `src/components/UserControl.jsx` me `APP_TABS` ki `['fms', 'FMS Grid']` line
+comment hai (nav + User Control dono se gayab; code waisa hi). Wapas lana = line uncomment.
+Poora delete karne ke steps:
+1. `src/components/Grid.jsx` aur `src/lib/columns.js` delete (sirf Grid use karta hai).
+2. `src/App.jsx`: `Grid` + `getColumns` import, `columns`, `fupCounts` / `partyInfo` state aur unki loading
+   (`loadAll` me), aur `{tab === 'fms' && <Grid .../>}` line hatao.
+3. `UserControl.jsx` se commented line hatao.
+4. `src/index.css` me sirf Grid wali classes (build ke baad unused) hatao.
+5. DB: `update fms_users set tabs = array_remove(tabs, 'fms');`
+`OrderDrawer` / `FollowupModal` / `lib/fms.js` Today Work bhi use karta hai — inhe mat hatana.

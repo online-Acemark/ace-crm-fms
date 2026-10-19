@@ -534,7 +534,7 @@ export default function Collection() {
       r.erp += Number(x.amount || 0); r.erpN++; r.recvParties.add(normKey(x.party_name))
     }
     for (const f of fups) {
-      if (f.mode === 'whatsapp' || !inRange(f.created_at)) continue
+      if (f.mode === 'whatsapp' || f.mode === 'hold_form' || !inRange(f.created_at)) continue   // hold_form = purani sheet ka import, call nahi
       r.done++
       const u = userName(f.created_by) || '?'; r.byUser[u] = (r.byUser[u] || 0) + 1
       if (Number(f.amount_received) > 0) { r.logged += Number(f.amount_received); r.recvParties.add(normKey(f.party_name)) }

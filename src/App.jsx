@@ -10,6 +10,7 @@ import Salesman from './components/Salesman'
 import StageConfig from './components/StageConfig'
 import UserControl, { APP_TABS } from './components/UserControl'
 import PendingQty from './components/PendingQty'
+import { HoldLinkModal } from './components/HoldApproval'
 import { getColumns } from './lib/columns'
 
 function Login() {
@@ -63,6 +64,12 @@ export default function App() {
   }, [theme])
 
   const demo = new URLSearchParams(window.location.search).has('demo')
+  // Telegram hold alert ka link (?hold=<case id>) -> commitment form; band karne par URL se hata do
+  const [holdLink, setHoldLink] = useState(() => new URLSearchParams(window.location.search).get('hold'))
+  const closeHoldLink = () => {
+    setHoldLink(null)
+    const u = new URL(window.location.href); u.searchParams.delete('hold'); window.history.replaceState(null, '', u)
+  }
 
   useEffect(() => {
     if (demo) { setSession({ user: { email: 'demo@local', user_metadata: {} } }); return }
@@ -190,6 +197,7 @@ export default function App() {
         {tab === 'stages' && <StageConfig stages={stages} scoring={scoring} onChanged={loadAll} />}
         {tab === 'users' && access?.is_admin && <UserControl myEmail={user.email} />}
       </main>
+      {holdLink && <HoldLinkModal caseId={holdLink} onClose={closeHoldLink} />}
     </div>
   )
 }
