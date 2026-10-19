@@ -112,7 +112,8 @@ async function holdAlerts() {
     sb("fms_settings?key=eq.telegram&select=value"),
     sb("rpc/ss_secrets", { method: "POST", headers: { "Content-Profile": "score" }, body: "{}" }).catch(() => ({})),
   ]);
-  const bots = [tgRow?.[0]?.value?.token, (ss as any)?.TELEGRAM_BOT_TOKEN].filter(Boolean);
+  // FMS bot, Score System bot, Checklist & Delegation bot (project secret) — jise user ne /start kiya ho
+  const bots = [tgRow?.[0]?.value?.token, (ss as any)?.TELEGRAM_BOT_TOKEN, Deno.env.get("TELEGRAM_BOT_TOKEN")].filter(Boolean);
   const chatOfName = (name: unknown) => users.find((u: any) => normPerson(u.user_name) === normPerson(name) && String(u.telegram_chat_id || "").trim())?.telegram_chat_id;
   const chatOfEmp = (id: unknown) => users.find((u: any) => u.id === id && String(u.telegram_chat_id || "").trim())?.telegram_chat_id;
   const dm = async (chat: unknown, text: string) => {
@@ -170,6 +171,28 @@ Deno.serve(async (req) => {
     if (!mode && req.method === "POST") { try { mode = (await req.json())?.mode || ""; } catch (_e) { /* body nahi */ } }
     mode = mode || "instant";
     const now = nowIST();
+
+    if (mode === "holddiag") {
+      // koi message nahi bhejta — sirf getChat: kaunsa bot kis user (salesman / approver) tak pahunch sakta hai
+      const [users, tgRow, ss] = await Promise.all([
+        sbAll("users?select=id,user_name,telegram_chat_id&telegram_chat_id=not.is.null&order=id"),
+        sb("fms_settings?key=eq.telegram&select=value"),
+        sb("rpc/ss_secrets", { method: "POST", headers: { "Content-Profile": "score" }, body: "{}" }).catch(() => ({})),
+      ]);
+      const bots: [string, string | undefined][] = [["fms", tgRow?.[0]?.value?.token], ["score", (ss as any)?.TELEGRAM_BOT_TOKEN], ["checklist", Deno.env.get("TELEGRAM_BOT_TOKEN")]];
+      const out: any[] = [];
+      for (const u of users) {
+        const chat = String(u.telegram_chat_id || "").trim();
+        if (!chat) continue;
+        const ok: string[] = [];
+        for (const [name, tok] of bots) {
+          if (!tok) continue;
+          try { if ((await (await fetch(`https://api.telegram.org/bot${tok}/getChat?chat_id=${encodeURIComponent(chat)}`)).json()).ok) ok.push(name); } catch (_e) { /* skip */ }
+        }
+        out.push({ id: u.id, user: u.user_name, reachable_by: ok });
+      }
+      return new Response(JSON.stringify({ ok: true, bots: bots.filter((b) => b[1]).map((b) => b[0]), users: out }), { headers: { "Content-Type": "application/json" } });
+    }
 
     if (mode === "hold") {
       const r = await holdAlerts();

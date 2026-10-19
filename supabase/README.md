@@ -138,7 +138,9 @@ cron `hold_sheet_off` se 19 Oct 00:00 IST ko band hota hai.
 - Approve/Reject `fms_hold_decide` — sirf `fms_users.can_approve_hold = true` (User Control → "Hold approver").
   Reject me reason zaroori.
 - Alerts (`fms-alerts`, `mode=hold` + instant mode): naye case par salesman ko Telegram DM (`public.users.telegram_chat_id`,
-  naam se match), commitment aane par approvers ko. Pehle FMS bot, na chale to Score System bot.
+  naam se match), commitment aane par approvers ko. FMS bot (@Acemark_alerts_bot), phir Score System bot, phir Checklist
+  bot (project secret `TELEGRAM_BOT_TOKEN`) — user ne jis bot ko Start kiya ho. `?mode=holddiag` bina message bheje batata
+  hai kaunsa bot kis user tak pahunchta hai.
 - MIS Score (registry 27 "Hold Approval"): source 129 → `score.v_hold_commit_mis` (salesman, planned = commit_planned_at,
   actual = commit_at), source 130 → `score.v_hold_approval_mis` (approver, planned = approve_planned_at, actual = decision_at).
   SO-wise; release ho chuke case ke pending task bahar.
