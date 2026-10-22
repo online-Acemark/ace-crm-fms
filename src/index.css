@@ -891,3 +891,4 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 .today-fups .tf-tbl tr { cursor: pointer; }
 .today-fups .tf-tbl tr:hover td { background: color-mix(in srgb, var(--blue) 6%, transparent); }
 .today-fups .tf-time { width: 70px; white-space: nowrap; }
+.today-fups .tf-stages { display: flex; gap: 4px; flex-wrap: wrap; }

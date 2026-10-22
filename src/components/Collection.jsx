@@ -543,14 +543,26 @@ export default function Collection() {
     return r
   }, [fups, rcpts, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Aaj ke follow-ups (pulse range se alag, hamesha aaj) — kisne kiye + kis party ke
+  // Aaj ke follow-ups (pulse range se alag, hamesha aaj) — kisne kiye + kis party ke.
+  // Count PARTY-wise: Payment received ke baad Close form bhi bharte hain, isliye ek party = 1 (forms nahi)
   const [todayOpen, setTodayOpen] = useState(false)
   const todayFups = useMemo(() => {
     const t = isoDay()
-    const list = fups.filter((f) => f.mode !== 'whatsapp' && f.mode !== 'hold_form' && f.created_at && isoDay(new Date(f.created_at)) === t)
+    // fups created_at DESC aate hain — reverse karke din ka order (pehla form pehle)
+    const list = fups.filter((f) => f.mode !== 'whatsapp' && f.mode !== 'hold_form' && f.created_at && isoDay(new Date(f.created_at)) === t).reverse()
     const byUser = {}
-    for (const f of list) { const u = userName(f.created_by) || '?'; (byUser[u] = byUser[u] || []).push(f) }
-    return { list, byUser: Object.entries(byUser).sort((a, b) => b[1].length - a[1].length) }
+    const allParties = new Set()
+    for (const f of list) {
+      const u = userName(f.created_by) || '?'; const k = normKey(f.party_name)
+      allParties.add(k)
+      const parties = (byUser[u] = byUser[u] || new Map())
+      if (!parties.has(k)) parties.set(k, { key: k, party_name: f.party_name, first: f.created_at, forms: [] })
+      parties.get(k).forms.push(f)
+    }
+    return {
+      forms: list.length, parties: allParties.size,
+      byUser: Object.entries(byUser).map(([u, m]) => [u, [...m.values()]]).sort((a, b) => b[1].length - a[1].length),
+    }
   }, [fups])
 
   // har party ka derived data ek baar (filter/sort/KPI sab isi se)
@@ -697,31 +709,37 @@ export default function Collection() {
           <button className={preset === 'flw5' ? 'kpi-card active' : 'kpi-card'} onClick={() => setPreset('flw5')} title="Chased 5 or more times — needs escalation">
             <i>🔁</i><b>{kpi.flw5}</b><span>5+ follow-ups</span>
           </button>
-          <button className={todayOpen ? 'kpi-card green active' : 'kpi-card green'} onClick={() => setTodayOpen((v) => !v)} title="Follow-ups logged today — click to see who did which party">
-            <i>📞</i><b>{todayFups.list.length}</b><span>Follow-ups today · {todayFups.byUser.length} user{todayFups.byUser.length === 1 ? '' : 's'}</span>
+          <button className={todayOpen ? 'kpi-card green active' : 'kpi-card green'} onClick={() => setTodayOpen((v) => !v)} title={`Parties followed up today (${todayFups.forms} forms) — click to see who did which party`}>
+            <i>📞</i><b>{todayFups.parties}</b><span>Parties followed up today · {todayFups.byUser.length} user{todayFups.byUser.length === 1 ? '' : 's'}</span>
           </button>
         </div>
 
         {todayOpen && (
           <div className="coll-pulse today-fups">
             <div className="pulse-head">
-              <div><b>Today's follow-ups</b> <span className="muted small">— {dmy(new Date())} · {todayFups.list.length} total (WhatsApp sends not counted)</span></div>
+              <div><b>Today's follow-ups</b> <span className="muted small">— {dmy(new Date())} · {todayFups.parties} parties · {todayFups.forms} forms (one party counted once; WhatsApp sends not counted)</span></div>
               <button className="btn ghost sm" onClick={() => setTodayOpen(false)}>✕</button>
             </div>
-            {!todayFups.list.length && <p className="muted small">No follow-ups logged yet today.</p>}
-            {todayFups.byUser.map(([u, list]) => (
+            {!todayFups.forms && <p className="muted small">No follow-ups logged yet today.</p>}
+            {todayFups.byUser.map(([u, parties]) => (
               <div key={u} className="tf-user">
-                <div className="tf-user-head"><Avatar name={u} size={22} /> <b>{u}</b> <span className="user-tag"><b>{list.length}</b> follow-up{list.length === 1 ? '' : 's'}</span></div>
+                <div className="tf-user-head"><Avatar name={u} size={22} /> <b>{u}</b> <span className="user-tag"><b>{parties.length}</b> part{parties.length === 1 ? 'y' : 'ies'}</span></div>
                 <table className="cfg-tbl tf-tbl">
                   <tbody>
-                    {list.map((f) => (
-                      <tr key={f.id} className="coll-row" onClick={() => setOpen(rows.find((r) => normKey(r.party_name) === normKey(f.party_name))?.party_name || null)}>
-                        <td className="muted small tf-time">{new Date(f.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
-                        <td><b>{f.party_name}</b></td>
-                        <td><StageChip s={f.stage} /></td>
-                        <td className="small">{[f.customer_says, f.remarks].filter(Boolean).join(' — ')}{Number(f.committed_amount) > 0 ? ` · promised ${inrShort(f.committed_amount)}` : ''}{Number(f.amount_received) > 0 ? ` · received ${inrShort(f.amount_received)}` : ''}</td>
-                      </tr>
-                    ))}
+                    {parties.map((pt) => {
+                      const stages = [...new Set(pt.forms.map((f) => f.stage).filter(Boolean))]
+                      const notes = pt.forms.map((f) => [f.customer_says, f.remarks].filter(Boolean).join(' — ')).filter(Boolean)
+                      const promised = pt.forms.reduce((a, f) => a + Number(f.committed_amount || 0), 0)
+                      const recv = pt.forms.reduce((a, f) => a + Number(f.amount_received || 0), 0)
+                      return (
+                        <tr key={pt.key} className="coll-row" onClick={() => setOpen(rows.find((r) => normKey(r.party_name) === pt.key)?.party_name || null)}>
+                          <td className="muted small tf-time">{new Date(pt.first).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+                          <td><b>{pt.party_name}</b>{pt.forms.length > 1 && <span className="muted small"> · {pt.forms.length} forms</span>}</td>
+                          <td className="tf-stages">{stages.map((s) => <StageChip key={s} s={s} />)}</td>
+                          <td className="small">{notes.join(' / ')}{promised > 0 ? ` · promised ${inrShort(promised)}` : ''}{recv > 0 ? ` · received ${inrShort(recv)}` : ''}</td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
