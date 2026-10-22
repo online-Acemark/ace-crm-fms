@@ -881,3 +881,13 @@ button.pulse-stat:hover, .pulse-stat.active { border-color: var(--blue); }
 /* Today Work -> Contact Data Adhura: party-wise fill boxes */
 .contact-fill { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 260px; }
 .contact-fill input { width: 130px; padding: 4px 6px; font-size: 12px; }
+
+/* Collection: today's follow-ups (kisne kiye, kis party ke) */
+.kpi-card.green b { color: var(--green); }
+.kpi-card.green::before { background: var(--green); }
+.today-fups .tf-user { margin-top: 10px; }
+.today-fups .tf-user-head { display: flex; align-items: center; gap: 6px; }
+.today-fups .tf-tbl { margin-top: 4px; }
+.today-fups .tf-tbl tr { cursor: pointer; }
+.today-fups .tf-tbl tr:hover td { background: color-mix(in srgb, var(--blue) 6%, transparent); }
+.today-fups .tf-time { width: 70px; white-space: nowrap; }

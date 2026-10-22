@@ -4,7 +4,7 @@ import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from 
 import MultiSelect from './MultiSelect'
 import { inr, inrShort, dmy, isoDay, normKey, pdcAmtText, userName, isCross, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, ledgerDiff, diffReason, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, COLL_DEFAULT_ON, useColVis, cellOf, sortVal, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
-import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
+import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow, StageChip } from './CollBits'
 
 // Collection tab: poore ledger ka party-wise outstanding (fms_collection, har ghante ERP se sync)
 // + follow-up system (fms_followups): stage, bills, commitment, transfer, permanent note
@@ -543,6 +543,16 @@ export default function Collection() {
     return r
   }, [fups, rcpts, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Aaj ke follow-ups (pulse range se alag, hamesha aaj) — kisne kiye + kis party ke
+  const [todayOpen, setTodayOpen] = useState(false)
+  const todayFups = useMemo(() => {
+    const t = isoDay()
+    const list = fups.filter((f) => f.mode !== 'whatsapp' && f.mode !== 'hold_form' && f.created_at && isoDay(new Date(f.created_at)) === t)
+    const byUser = {}
+    for (const f of list) { const u = userName(f.created_by) || '?'; (byUser[u] = byUser[u] || []).push(f) }
+    return { list, byUser: Object.entries(byUser).sort((a, b) => b[1].length - a[1].length) }
+  }, [fups])
+
   // har party ka derived data ek baar (filter/sort/KPI sab isi se)
   const enriched = useMemo(() => (rows || []).map((p) => {
     const ag = agOf(p); const bucket = bucketOf(p, ag)
@@ -687,7 +697,37 @@ export default function Collection() {
           <button className={preset === 'flw5' ? 'kpi-card active' : 'kpi-card'} onClick={() => setPreset('flw5')} title="Chased 5 or more times — needs escalation">
             <i>🔁</i><b>{kpi.flw5}</b><span>5+ follow-ups</span>
           </button>
+          <button className={todayOpen ? 'kpi-card green active' : 'kpi-card green'} onClick={() => setTodayOpen((v) => !v)} title="Follow-ups logged today — click to see who did which party">
+            <i>📞</i><b>{todayFups.list.length}</b><span>Follow-ups today · {todayFups.byUser.length} user{todayFups.byUser.length === 1 ? '' : 's'}</span>
+          </button>
         </div>
+
+        {todayOpen && (
+          <div className="coll-pulse today-fups">
+            <div className="pulse-head">
+              <div><b>Today's follow-ups</b> <span className="muted small">— {dmy(new Date())} · {todayFups.list.length} total (WhatsApp sends not counted)</span></div>
+              <button className="btn ghost sm" onClick={() => setTodayOpen(false)}>✕</button>
+            </div>
+            {!todayFups.list.length && <p className="muted small">No follow-ups logged yet today.</p>}
+            {todayFups.byUser.map(([u, list]) => (
+              <div key={u} className="tf-user">
+                <div className="tf-user-head"><Avatar name={u} size={22} /> <b>{u}</b> <span className="user-tag"><b>{list.length}</b> follow-up{list.length === 1 ? '' : 's'}</span></div>
+                <table className="cfg-tbl tf-tbl">
+                  <tbody>
+                    {list.map((f) => (
+                      <tr key={f.id} className="coll-row" onClick={() => setOpen(rows.find((r) => normKey(r.party_name) === normKey(f.party_name))?.party_name || null)}>
+                        <td className="muted small tf-time">{new Date(f.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td><b>{f.party_name}</b></td>
+                        <td><StageChip s={f.stage} /></td>
+                        <td className="small">{[f.customer_says, f.remarks].filter(Boolean).join(' — ')}{Number(f.committed_amount) > 0 ? ` · promised ${inrShort(f.committed_amount)}` : ''}{Number(f.amount_received) > 0 ? ` · received ${inrShort(f.amount_received)}` : ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Pulse: date range me ERP receipts + follow-ups done (team productivity) */}
         {pulseOpen && (
