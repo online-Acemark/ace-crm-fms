@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { buildCollectionMsg, waLink, logWaSendParty, suggestNextFollowup } from '../lib/fms'
 import MultiSelect from './MultiSelect'
-import { inr, inrShort, dmy, isoDay, normKey, pdcAmtText, userName, isUrgent, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, ledgerDiff, diffReason, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
+import { inr, inrShort, dmy, isoDay, normKey, pdcAmtText, userName, isCross, FORM_STAGES, STAGE_HINT, PAY_MODES, RECEIVED_BY, NO_RESPONSE_SAYS, useFormOpts, bucketOf, isBroken, EMPTY_AGG, buildAgg, priorityOf, hasDiff, ledgerDiff, diffReason, fetchAll, FUP_COLS, RCPT_COLS, BUCKET_LABEL, useIsMobile } from '../lib/coll'
 import { COLS, COL_PRESETS, COLL_DEFAULT_ON, useColVis, cellOf, sortVal, useExtraFilters, filterOptions, applyExtraFilters, extraFilterText, useTotals, printTable } from '../lib/collCols'
 import { BucketPill, Timeline, Receipts, Avatar, PartyCell, StatStrip, Tabs, Chip, Toast, NextUp, Skeleton, PartyCard, ExtraFilters, ColPanel, TotalsRow } from './CollBits'
 
@@ -16,7 +16,7 @@ const STATUS_PRESETS = [
   { key: 'tomorrow', label: 'Tomorrow' }, { key: 'week', label: 'This week' }, { key: 'nodate', label: 'No date' },
 ]
 const SITUATION_PRESETS = [
-  { key: 'broken', label: '💔 Broken promise', tone: 'red' }, { key: 'hot', label: '🔴 Urgent', tone: 'red' }, { key: 'warm', label: '🟠 90+ days', tone: 'amber' },
+  { key: 'broken', label: '💔 Broken promise', tone: 'red' }, { key: 'old180', label: '🔴 180+ days', tone: 'red' }, { key: 'cross', label: '🚧 Limit crossed', tone: 'red' }, { key: 'warm', label: '🟠 90+ days', tone: 'amber' },
   { key: 'committed', label: '🤝 Committed / PDC' }, { key: 'pdc', label: '🧾 PDC' }, { key: 'flw5', label: '🔁 5+ follow-ups' },
   { key: 'received', label: '💵 Received' }, { key: 'transferred', label: '↪ Transferred' }, { key: 'closed', label: '✅ Closed' }, { key: 'excluded', label: '🚫 Excluded' },
   { key: 'diffchk', label: '⚖ Difference check', tone: 'amber' },
@@ -31,7 +31,8 @@ function matchPreset(e, key, recvSet) {
     case 'all': return true
     case 'missed': case 'today': case 'tomorrow': case 'week': case 'nodate': case 'closed': return e.bucket === key
     case 'broken': return e.broken
-    case 'hot': return isUrgent(e.p)
+    case 'old180': return (e.p.oldest_od || 0) > 180   // Urgent (a): sabse purana bill 6 mahine se zyada
+    case 'cross': return isCross(e.p)                   // Urgent (b): kul baaki credit limit se upar
     case 'warm': return (e.p.oldest_od || 0) > 90
     case 'committed': return (e.ag.committed && !e.broken) || e.p.has_pdc || e.ag.lastStage === 'PDC received'
     case 'pdc': return e.p.has_pdc || e.ag.lastStage === 'PDC received'
@@ -558,7 +559,9 @@ export default function Collection() {
       missed: missed.length, missedAmt: sum(missed),
       due: live.filter((e) => e.bucket === 'today').length,
       broken: live.filter((e) => e.broken).length,
-      hot: live.filter((e) => isUrgent(e.p)).length,
+      old180N: live.filter((e) => (e.p.oldest_od || 0) > 180).length,
+      cross: live.filter((e) => isCross(e.p)).length,
+      crossAmt: live.filter((e) => isCross(e.p)).reduce((a, e) => a + Number(e.p.total_pending || 0) - Number(e.p.credit_limit || 0), 0),
       old180: live.reduce((a, e) => a + Number(e.p.aging?.b180p || 0), 0),
       commit: live.filter((e) => matchPreset(e, 'committed', pulse.recvParties)).length,
       flw5: live.filter((e) => e.ag.count >= 5).length,
@@ -672,8 +675,11 @@ export default function Collection() {
           <button className={preset === 'broken' ? 'kpi-card red active' : 'kpi-card red'} onClick={() => setPreset('broken')} title="Promised date passed, nothing received">
             <i>💔</i><b>{kpi.broken}</b><span>Broken promises</span>
           </button>
-          <button className={preset === 'hot' ? 'kpi-card red active' : 'kpi-card red'} onClick={() => setPreset('hot')}>
-            <i>🔴</i><b>{kpi.hot}</b><span>Urgent · {inrShort(kpi.old180)} very old</span>
+          <button className={preset === 'old180' ? 'kpi-card red active' : 'kpi-card red'} onClick={() => setPreset('old180')} title="Oldest bill is more than 180 days overdue">
+            <i>🔴</i><b>{kpi.old180N}</b><span>180+ days · {inrShort(kpi.old180)} very old</span>
+          </button>
+          <button className={preset === 'cross' ? 'kpi-card red active' : 'kpi-card red'} onClick={() => setPreset('cross')} title="Total pending is above the party's credit limit">
+            <i>🚧</i><b>{kpi.cross}</b><span>Limit crossed · {inrShort(kpi.crossAmt)} over</span>
           </button>
           <button className={preset === 'committed' ? 'kpi-card active' : 'kpi-card'} onClick={() => setPreset('committed')}>
             <i>🤝</i><b>{kpi.commit}</b><span>Committed / PDC</span>
